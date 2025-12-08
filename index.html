@@ -1,0 +1,1415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GamerKraft 3D - Pro Edition</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=JetBrains+Mono:wght@500&display=swap');
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0f172a; 
+            color: white;
+            overflow: hidden;
+            user-select: none;
+        }
+
+        .panel {
+            background: rgba(15, 23, 42, 0.95);
+            border: 1px solid #334155;
+            backdrop-filter: blur(8px);
+        }
+
+        .tool-btn {
+            transition: all 0.1s;
+        }
+        .tool-btn.active {
+            background-color: #2563eb;
+            color: white;
+            border-color: #3b82f6;
+        }
+        
+        #crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            z-index: 50;
+            filter: drop-shadow(0 0 2px black);
+        }
+
+        body.exported #editor-ui { display: none !important; }
+        body.exported #start-screen { display: flex !important; }
+        
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
+
+        .transition-smooth { transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        .animate-pulse { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+
+        #notification {
+            transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275), opacity 0.3s ease;
+        }
+        #notification.hidden {
+            display: flex !important; 
+            opacity: 0;
+            pointer-events: none;
+            transform: translate(-50%, -20px);
+        }
+
+        /* Palette Item Styling */
+        .palette-item {
+            position: relative;
+            overflow: hidden;
+        }
+        .palette-item img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            padding: 4px;
+            filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5));
+        }
+        .palette-item.active {
+            border-color: #3b82f6;
+            background-color: #1e293b;
+        }
+    </style>
+</head>
+<body class="h-screen w-screen flex flex-col bg-black">
+
+    <div id="game-hud" class="hidden absolute top-4 right-4 z-30 flex gap-2 pointer-events-none">
+        <div id="score-display" class="px-3 py-1 bg-slate-900/80 backdrop-blur rounded text-yellow-400 font-mono text-sm font-bold border border-slate-700 shadow-lg">
+            SCORE: <span id="score-val">0</span>
+        </div>
+        <div id="fps-display" class="px-2 py-1 bg-slate-900/80 backdrop-blur rounded text-green-400 font-mono text-xs border border-slate-700 shadow-lg">
+            FPS: <span id="fps-val">60</span>
+        </div>
+    </div>
+
+    <div id="editor-ui" class="absolute inset-0 pointer-events-none z-20 flex flex-col">
+        
+        <div class="h-12 panel border-b flex items-center justify-between px-4 pointer-events-auto shrink-0">
+            <div class="flex items-center gap-4">
+                <div class="flex items-center gap-2 text-blue-500">
+                    <i data-lucide="box" class="w-5 h-5"></i>
+                    <span class="font-black tracking-tight text-white">GAMERKRAFT <span class="text-blue-500 text-xs align-top">PRO</span></span>
+                </div>
+                <div class="h-4 w-px bg-slate-700"></div>
+                <div class="flex bg-slate-800 rounded p-0.5">
+                    <button id="modeEdit" onclick="switchBetweenMakingAndPlaying('EDIT')" class="px-3 py-1 text-xs font-bold rounded bg-blue-600 text-white shadow">EDITOR</button>
+                    <button id="modePlay" onclick="switchBetweenMakingAndPlaying('PLAY')" class="px-3 py-1 text-xs font-bold rounded text-slate-400 hover:text-white">PLAY</button>
+                </div>
+                
+                <div class="flex items-center gap-2 text-xs ml-4">
+                    <span class="text-slate-400 font-bold">MAP SIZE:</span>
+                    <input type="number" id="mapSizeInput" value="20" min="10" max="200" class="w-12 bg-slate-800 border border-slate-700 rounded px-1 py-0.5 text-center" onchange="makeTheMapBiggerOrSmaller(this.value)">
+                </div>
+
+                <div class="flex items-center gap-1 ml-4 border-l border-slate-700 pl-4">
+                    <button onclick="makeTheCameraGoZoomZoom(-5)" class="p-1.5 hover:bg-slate-800 rounded text-slate-400 hover:text-white transition-colors" title="Zoom In">
+                        <i data-lucide="zoom-in" class="w-4 h-4"></i>
+                    </button>
+                    <button onclick="makeTheCameraGoZoomZoom(5)" class="p-1.5 hover:bg-slate-800 rounded text-slate-400 hover:text-white transition-colors" title="Zoom Out">
+                        <i data-lucide="zoom-out" class="w-4 h-4"></i>
+                    </button>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-2">
+                <button onclick="showMeTheNerdyNumbers()" class="p-1.5 hover:bg-slate-800 rounded text-slate-400 hover:text-white" title="Toggle Debug"><i data-lucide="bug" class="w-4 h-4"></i></button>
+                <button onclick="saveTheWholeDarnThingToAFile()" class="p-1.5 hover:bg-slate-800 rounded text-slate-400 hover:text-white" title="Save Project"><i data-lucide="save" class="w-4 h-4"></i></button>
+                <button onclick="document.getElementById('fileInput').click()" class="p-1.5 hover:bg-slate-800 rounded text-slate-400 hover:text-white" title="Load Project"><i data-lucide="folder-open" class="w-4 h-4"></i></button>
+                <button onclick="turnThisIntoARealGameFile()" class="flex items-center gap-2 bg-green-600 hover:bg-green-500 text-white px-3 py-1 rounded text-xs font-bold transition-colors shadow">
+                    <i data-lucide="rocket" class="w-3 h-3"></i> PUBLISH
+                </button>
+                <input type="file" id="fileInput" class="hidden" accept=".json" onchange="loadTheFileAndPrayItWorks(this)">
+            </div>
+        </div>
+
+        <div class="flex-1 flex overflow-hidden">
+            <div class="w-16 panel border-r flex flex-col items-center py-4 gap-4 pointer-events-auto">
+                <div class="flex flex-col gap-2 w-full px-2">
+                    <span class="text-[10px] text-slate-500 font-bold text-center uppercase">Tools</span>
+                    <button onclick="pickTheRightToolForTheJob('brush')" id="tool-brush" class="tool-btn active w-full aspect-square rounded flex items-center justify-center bg-slate-800 border border-slate-700 text-slate-400 hover:text-white" title="Brush">
+                        <i data-lucide="paintbrush" class="w-5 h-5"></i>
+                    </button>
+                    <button onclick="pickTheRightToolForTheJob('box')" id="tool-box" class="tool-btn w-full aspect-square rounded flex items-center justify-center bg-slate-800 border border-slate-700 text-slate-400 hover:text-white" title="Box Fill">
+                        <i data-lucide="box-select" class="w-5 h-5"></i>
+                    </button>
+                    <button onclick="pickTheRightToolForTheJob('eraser')" id="tool-eraser" class="tool-btn w-full aspect-square rounded flex items-center justify-center bg-slate-800 border border-slate-700 text-slate-400 hover:text-white hover:border-red-500" title="Eraser">
+                        <i data-lucide="eraser" class="w-5 h-5"></i>
+                    </button>
+                </div>
+                
+                <div class="h-px w-8 bg-slate-700"></div>
+
+                <div class="flex flex-col gap-2 w-full px-2">
+                    <span class="text-[10px] text-slate-500 font-bold text-center uppercase">Action</span>
+                    <button onclick="destroyEverythingAndStartOver()" class="w-full aspect-square rounded flex items-center justify-center bg-slate-800 border border-slate-700 text-red-400 hover:bg-red-900/50 hover:text-red-200" title="Clear All">
+                        <i data-lucide="trash-2" class="w-5 h-5"></i>
+                    </button>
+                </div>
+            </div>
+
+            <div class="flex-1 relative">
+                <div id="tool-hint" class="absolute top-4 left-1/2 -translate-x-1/2 bg-black/70 text-white text-xs px-3 py-1 rounded-full backdrop-blur-sm border border-white/20 pointer-events-none transition-smooth">
+                    Arrow Keys: Look • Left-Click: Action • WASD: Move
+                </div>
+            </div>
+        </div>
+
+        <div class="h-28 panel border-t p-2 pointer-events-auto shrink-0 flex justify-center items-center">
+            <div class="flex gap-2 overflow-x-auto px-2 pb-2 w-full justify-center" id="block-palette"></div>
+        </div>
+    </div>
+
+    <div id="notification" class="hidden absolute top-20 left-1/2 -translate-x-1/2 bg-slate-800/95 backdrop-blur border border-slate-600 text-white px-6 py-3 rounded-lg shadow-2xl z-[60] flex items-center gap-3">
+        <div id="notif-icon"><i data-lucide="info" class="w-5 h-5 text-blue-400"></i></div>
+        <span id="notification-msg" class="font-medium text-sm">Message</span>
+    </div>
+
+    <div id="start-screen" class="hidden absolute inset-0 bg-slate-950 z-50 flex items-center justify-center flex-col">
+        <h1 class="text-6xl font-black text-white mb-2 tracking-tight animate-pulse">GAMERKRAFT <span class="text-blue-500">3D</span></h1>
+        <p class="text-slate-400 mb-8">Professional Game Maker</p>
+        <button onclick="letsGetThisPartyStarted()" class="bg-blue-600 hover:bg-blue-500 text-white px-8 py-3 rounded-full font-bold text-lg shadow-lg transition-transform hover:scale-105">START GAME</button>
+    </div>
+
+    <div id="game-overlay" class="hidden absolute inset-0 bg-slate-900/90 backdrop-blur-md z-40 flex items-center justify-center flex-col">
+        <h1 id="overlay-title" class="text-6xl font-black mb-4 text-white">VICTORY</h1>
+        <p id="overlay-msg" class="text-2xl text-slate-300 mb-8">Score: 0</p>
+        <button onclick="restartBecauseYouDiedOrWon()" class="bg-white text-slate-900 px-8 py-3 rounded-full font-bold hover:scale-105 transition-transform shadow-lg cursor-pointer pointer-events-auto">PLAY AGAIN</button>
+    </div>
+
+    <div id="debug-panel" class="hidden absolute top-16 right-4 w-72 bg-black/90 text-green-400 font-mono text-xs p-4 rounded border border-green-900 z-50 pointer-events-none">
+        <h3 class="font-bold text-white mb-2 border-b border-gray-700 pb-1">DEBUG INFO</h3>
+        <div id="debug-content" class="space-y-1">Waiting...</div>
+    </div>
+
+    <div id="compass" class="absolute bottom-36 right-6 w-16 h-16 bg-slate-900/90 rounded-full border-2 border-slate-600 shadow-xl z-10 overflow-hidden pointer-events-none">
+        <div id="compass-face" class="w-full h-full relative transition-transform duration-75 ease-linear">
+            <span class="absolute top-1 left-1/2 -translate-x-1/2 text-[10px] font-bold text-red-500">N</span>
+            <span class="absolute bottom-1 left-1/2 -translate-x-1/2 text-[8px] font-bold text-slate-400">S</span>
+            <span class="absolute right-2 top-1/2 -translate-y-1/2 text-[8px] font-bold text-slate-400">E</span>
+            <span class="absolute left-2 top-1/2 -translate-y-1/2 text-[8px] font-bold text-slate-400">W</span>
+        </div>
+        <div class="absolute top-0 left-1/2 -translate-x-1/2 w-0 h-2 border-x-[3px] border-x-transparent border-t-[6px] border-t-yellow-400"></div>
+    </div>
+
+    <div id="crosshair">
+        <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" class="w-6 h-6 drop-shadow-md">
+            <path d="M12 8v8M8 12h8" />
+        </svg>
+    </div>
+
+    <div id="canvas-container" class="absolute inset-0 z-0 bg-slate-900 cursor-crosshair"></div>
+
+    <script>
+        // SVG Data Generators
+        const getIcon = (type, color) => {
+            const hex = '#' + color.toString(16).padStart(6, '0');
+            if(type === 'tree') return `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><rect x="40" y="60" width="20" height="30" fill="#78350f"/><path d="M50 10 L10 60 L90 60 Z" fill="#22c55e"/></svg>`;
+            if(type === 'coin') return `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><circle cx="50" cy="50" r="40" fill="#facc15" stroke="#a16207" stroke-width="5"/><text x="50" y="70" font-size="60" text-anchor="middle" fill="#a16207">$</text></svg>`;
+            if(type === 'spike') return `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><path d="M50 10 L20 90 L80 90 Z" fill="#ef4444" stroke="#7f1d1d" stroke-width="5"/></svg>`;
+            if(type === 'jetpack') return `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><rect x="25" y="20" width="50" height="60" rx="10" fill="#f97316"/><rect x="35" y="10" width="10" height="10" fill="#94a3b8"/><rect x="55" y="10" width="10" height="10" fill="#94a3b8"/><path d="M35 80 L35 95 L45 80 Z" fill="#facc15"/><path d="M55 80 L55 95 L65 80 Z" fill="#facc15"/></svg>`;
+            if(type === 'water') return `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><rect width="100" height="100" fill="#3b82f6"/><path d="M0 50 Q 25 30 50 50 T 100 50 V 100 H 0 Z" fill="#60a5fa" opacity="0.5"/></svg>`;
+            if(type === 'start') return `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><rect x="10" y="10" width="80" height="80" fill="#3b82f6" stroke="#1d4ed8" stroke-width="5"/><text x="50" y="65" font-size="40" text-anchor="middle" fill="white">S</text></svg>`;
+            if(type === 'goal') return `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><rect x="10" y="10" width="80" height="80" fill="#10b981" stroke="#047857" stroke-width="5"/><path d="M30 30 L70 70 M70 30 L30 70" stroke="white" stroke-width="10"/></svg>`;
+            if(type === 'enemy') return `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><rect x="20" y="20" width="60" height="60" fill="#7e22ce" rx="10"/><circle cx="35" cy="40" r="5" fill="red"/><circle cx="65" cy="40" r="5" fill="red"/><path d="M30 65 Q 50 55 70 65" stroke="white" stroke-width="3" fill="none"/></svg>`;
+            if(type === 'turret') return `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><rect x="20" y="50" width="60" height="40" fill="#334155"/><circle cx="50" cy="40" r="25" fill="#475569"/><rect x="40" y="10" width="20" height="30" fill="#1e293b"/></svg>`;
+            if(type === 'solid') return `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><rect x="5" y="5" width="90" height="90" fill="${hex}" stroke="#000000" stroke-opacity="0.2" stroke-width="5"/></svg>`;
+            // default
+            return `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><rect width="100" height="100" fill="${hex}"/></svg>`;
+        };
+
+        const THE_BLOCKS_WE_CAN_USE = [
+            { id: 1, name: 'Stone', color: 0x64748b, type: 'solid', imgType: 'solid' },
+            { id: 2, name: 'Grass', color: 0x22c55e, type: 'solid', imgType: 'solid' },
+            { id: 3, name: 'Dirt', color: 0x78350f, type: 'solid', imgType: 'solid' },
+            { id: 4, name: 'Wood', color: 0xa16207, type: 'solid', imgType: 'solid' },
+            { id: 5, name: 'Brick', color: 0xb91c1c, type: 'solid', imgType: 'solid' },
+            { id: 6, name: 'Glass', color: 0x67e8f9, opacity: 0.4, type: 'solid', imgType: 'solid' },
+            // REPLACED NEON WITH TREE
+            { id: 7, name: 'Tree', color: 0x22c55e, type: 'solid', shape: 'tree', imgType: 'tree' }, 
+            
+            { id: 10, name: 'Start', color: 0x3b82f6, opacity: 0.5, type: 'spawn', imgType: 'start' },
+            { id: 11, name: 'Goal', color: 0x10b981, type: 'goal', imgType: 'goal' },
+            { id: 12, name: 'Coin', color: 0xfacc15, type: 'coin', shape: 'coin', imgType: 'coin' },
+            { id: 13, name: 'Spike', color: 0xff0000, type: 'hazard', shape: 'cone', imgType: 'spike' },
+            { id: 14, name: 'Jump', color: 0xf472b6, type: 'jumppad', imgType: 'solid' },
+            { id: 15, name: 'Speed', color: 0x22d3ee, type: 'speedpad', imgType: 'solid' },
+            { id: 16, name: 'Enemy', color: 0x7e22ce, type: 'enemy_spawner', shape: 'skull', imgType: 'enemy' },
+            { id: 17, name: 'Turret', color: 0x334155, type: 'turret', imgType: 'turret' },
+            { id: 18, name: 'Water', color: 0x3b82f6, opacity: 0.3, type: 'liquid', imgType: 'water' },
+            { id: 19, name: 'Jetpack', color: 0xf97316, type: 'pickup_jetpack', shape: 'box', scale: 0.5, imgType: 'jetpack' }
+        ];
+
+        // magic numbers for moving around
+        const THE_RULES_OF_PHYSICS = {
+            GRAVITY: 0.025,
+            JUMP_POWER: 0.45,
+            MOVE_SPEED: 0.15,
+            SPRINT_SPEED: 0.28,
+            AIR_CONTROL: 0.08,
+            GROUND_FRICTION: 0.25,
+            AIR_FRICTION: 0.02,
+            GROUND_DETECT_DIST: 0.05,
+            PLAYER_HEIGHT: 1.8,
+            PLAYER_RADIUS: 0.3,
+            CAM_DISTANCE: 8,
+            CAM_LERP: 0.15,
+            CAM_HEIGHT_OFFSET: 2.0
+        };
+
+        // this holds everything happening right now
+        let theBigBagOfStuffThatMakesTheGameWork = {
+            mode: 'EDIT',
+            tool: 'brush',
+            blockId: 1,
+            mapSize: 20,
+            voxels: {},
+            meshes: {},
+            items: [],
+            entities: [],
+            theLittleGuyRunningAround: { 
+                pos: new THREE.Vector3(0, 12, 8), 
+                vel: new THREE.Vector3(), 
+                rot: new THREE.Euler(-0.5, 0, 0, 'YXZ'), 
+                onGround: false, 
+                speed: 1, 
+                dead: false, 
+                won: false,
+                coyoteTime: 0,
+                jumpBuffered: false,
+                hasJetpack: false,
+                inWater: false
+            },
+            drag: { active: false, start: new THREE.Vector3(), end: new THREE.Vector3() },
+            score: 0,
+            keys: {},
+            mouse: { rightDown: false, x: 0, y: 0 },
+            time: { last: performance.now(), delta: 0, fps: 60 },
+            spatial: {} 
+        };
+
+        // setup the 3d stuff
+        const theDivWhereTheMagicHappens = document.getElementById('canvas-container');
+        theDivWhereTheMagicHappens.innerHTML = ''; 
+
+        const thePlaceWhereEverythingLives = new THREE.Scene();
+        thePlaceWhereEverythingLives.background = new THREE.Color(0x1e293b);
+        thePlaceWhereEverythingLives.fog = new THREE.Fog(0x1e293b, 40, 180);
+
+        const theFloatingEye = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const thePainter = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+        thePainter.setSize(window.innerWidth, window.innerHeight);
+        thePainter.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        thePainter.shadowMap.enabled = true;
+        thePainter.shadowMap.type = THREE.PCFSoftShadowMap;
+        theDivWhereTheMagicHappens.appendChild(thePainter.domElement);
+
+        // let there be light
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+        thePlaceWhereEverythingLives.add(ambientLight);
+        
+        const theBigSun = new THREE.DirectionalLight(0xffffff, 0.8);
+        theBigSun.position.set(60, 100, 40);
+        theBigSun.castShadow = true;
+        theBigSun.shadow.camera.left = -50;
+        theBigSun.shadow.camera.right = 50;
+        theBigSun.shadow.camera.top = 50;
+        theBigSun.shadow.camera.bottom = -50;
+        theBigSun.shadow.mapSize.width = 2048;
+        theBigSun.shadow.mapSize.height = 2048;
+        theBigSun.shadow.camera.near = 0.5;
+        theBigSun.shadow.camera.far = 500;
+        thePlaceWhereEverythingLives.add(theBigSun);
+
+        // helpers so we dont get lost
+        let theGridOnTheFloor = new THREE.GridHelper(theBigBagOfStuffThatMakesTheGameWork.mapSize * 2, theBigBagOfStuffThatMakesTheGameWork.mapSize * 2, 0x94a3b8, 0x334155);
+        thePlaceWhereEverythingLives.add(theGridOnTheFloor);
+        const theRGBLines = new THREE.AxesHelper(5);
+        thePlaceWhereEverythingLives.add(theRGBLines);
+
+        // clicky thing
+        const theLaserPointerCheckingForClicks = new THREE.Raycaster();
+        const whereTheUserIsPointing = new THREE.Vector2();
+
+        // the blue block that follows the mouse
+        const ghostGeo = new THREE.BoxGeometry(1, 1, 1);
+        const ghostMat = new THREE.MeshBasicMaterial({ 
+            color: 0x3b82f6, 
+            opacity: 0.3, 
+            transparent: true, 
+            depthTest: false 
+        });
+        const theBlueGhostBlock = new THREE.Mesh(ghostGeo, ghostMat);
+        thePlaceWhereEverythingLives.add(theBlueGhostBlock);
+        
+        const theYellowBoxThingy = new THREE.Box3Helper(new THREE.Box3(), 0xffff00);
+        thePlaceWhereEverythingLives.add(theYellowBoxThingy);
+        theYellowBoxThingy.visible = false;
+
+        // the player mesh
+        const playerGeo = new THREE.BoxGeometry(0.6, THE_RULES_OF_PHYSICS.PLAYER_HEIGHT, 0.6);
+        const playerMat = new THREE.MeshStandardMaterial({ 
+            color: 0x3b82f6, 
+            roughness: 0.4,
+            metalness: 0.2
+        });
+        const theBlueBoxManMesh = new THREE.Mesh(playerGeo, playerMat);
+        theBlueBoxManMesh.castShadow = true;
+        theBlueBoxManMesh.receiveShadow = true;
+        theBlueBoxManMesh.visible = false;
+        thePlaceWhereEverythingLives.add(theBlueBoxManMesh);
+
+        // standard shapes
+        const boxGeo = new THREE.BoxGeometry(1, 1, 1);
+        const coneGeo = new THREE.ConeGeometry(0.5, 0.8, 4);
+        const coinGeo = new THREE.CylinderGeometry(0.4, 0.4, 0.1, 16);
+        coinGeo.rotateX(Math.PI / 2);
+        
+        const materials = {};
+        THE_BLOCKS_WE_CAN_USE.forEach(b => {
+            materials[b.id] = new THREE.MeshStandardMaterial({
+                color: b.color,
+                roughness: 0.6,
+                metalness: 0.1,
+                transparent: !!b.opacity,
+                opacity: b.opacity || 1,
+                emissive: b.emissive || 0x000000,
+                emissiveIntensity: 0.5
+            });
+        });
+
+        const enemyMat = new THREE.MeshStandardMaterial({ color: 0xef4444 });
+        const bulletMat = new THREE.MeshBasicMaterial({ color: 0xffff00 });
+
+        // optimization stuff i barely understand
+        function getSpatialKey(x, y, z) {
+            const size = 4;
+            return `${Math.floor(x/size)},${Math.floor(y/size)},${Math.floor(z/size)}`;
+        }
+
+        function addToSpatialHash(x, y, z, id) {
+            const key = getSpatialKey(x, y, z);
+            if (!theBigBagOfStuffThatMakesTheGameWork.spatial[key]) theBigBagOfStuffThatMakesTheGameWork.spatial[key] = [];
+            theBigBagOfStuffThatMakesTheGameWork.spatial[key].push({ x, y, z, id });
+        }
+
+        function removeFromSpatialHash(x, y, z) {
+            const key = getSpatialKey(x, y, z);
+            if (theBigBagOfStuffThatMakesTheGameWork.spatial[key]) {
+                theBigBagOfStuffThatMakesTheGameWork.spatial[key] = theBigBagOfStuffThatMakesTheGameWork.spatial[key].filter(v => 
+                    !(v.x === x && v.y === y && v.z === z)
+                );
+            }
+        }
+
+        // popups
+        let notifTimeout;
+        function showNotification(msg, type = 'info') {
+            const el = document.getElementById('notification');
+            const msgEl = document.getElementById('notification-msg');
+            const iconEl = document.getElementById('notif-icon');
+            
+            msgEl.innerText = msg;
+            
+            if (type === 'error') {
+                iconEl.innerHTML = '<i data-lucide="alert-circle" class="w-5 h-5 text-red-400"></i>';
+            } else if (type === 'success') {
+                iconEl.innerHTML = '<i data-lucide="check-circle" class="w-5 h-5 text-green-400"></i>';
+            } else {
+                iconEl.innerHTML = '<i data-lucide="info" class="w-5 h-5 text-blue-400"></i>';
+            }
+            lucide.createIcons();
+
+            el.classList.remove('hidden');
+            el.style.transform = 'translate(-50%, 0)';
+            el.style.opacity = '1';
+
+            if (notifTimeout) clearTimeout(notifTimeout);
+            notifTimeout = setTimeout(() => {
+                el.style.opacity = '0';
+                el.style.transform = 'translate(-50%, -20px)';
+                setTimeout(() => el.classList.add('hidden'), 300);
+            }, 3000);
+        }
+
+        // making blocks appear
+        function makeANewBlockAppear(x, y, z, id) {
+            const key = `${x},${y},${z}`;
+            if (theBigBagOfStuffThatMakesTheGameWork.voxels[key]) yeetTheBlockIntoOblivion(x, y, z);
+
+            const def = THE_BLOCKS_WE_CAN_USE.find(b => b.id === id);
+            if (!def) return;
+
+            let mesh;
+            // Tree Logic
+            if (def.shape === 'tree') {
+                mesh = new THREE.Group();
+                const trunk = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.6, 0.4), new THREE.MeshStandardMaterial({color: 0x78350f}));
+                trunk.position.y = 0.3;
+                const leaves = new THREE.Mesh(new THREE.ConeGeometry(0.5, 0.8, 4), new THREE.MeshStandardMaterial({color: 0x22c55e}));
+                leaves.position.y = 0.8;
+                mesh.add(trunk);
+                mesh.add(leaves);
+                mesh.position.set(x + 0.5, y, z + 0.5); // Pivot at bottom
+            } else if (def.shape === 'cone') {
+                mesh = new THREE.Mesh(coneGeo, materials[id]);
+                mesh.position.set(x + 0.5, y + 0.4, z + 0.5);
+            } else if (def.shape === 'coin') {
+                mesh = new THREE.Mesh(coinGeo, materials[id]);
+                mesh.position.set(x + 0.5, y + 0.5, z + 0.5);
+            } else {
+                mesh = new THREE.Mesh(boxGeo, materials[id]);
+                mesh.position.set(x + 0.5, y + 0.5, z + 0.5);
+            }
+            
+            if (def.scale) mesh.scale.set(def.scale, def.scale, def.scale);
+
+            // Shadow logic for Group vs Mesh
+            mesh.traverse((child) => {
+                if (child.isMesh && ['solid', 'jumppad', 'speedpad', 'turret'].includes(def.type)) {
+                    child.castShadow = true;
+                    child.receiveShadow = true;
+                }
+            });
+            if (mesh.isMesh && ['solid', 'jumppad', 'speedpad', 'turret'].includes(def.type)) {
+                mesh.castShadow = true;
+                mesh.receiveShadow = true;
+            }
+
+            mesh.userData = { x, y, z, id, def, isBlock: true };
+            thePlaceWhereEverythingLives.add(mesh);
+            theBigBagOfStuffThatMakesTheGameWork.voxels[key] = id;
+            theBigBagOfStuffThatMakesTheGameWork.meshes[key] = mesh;
+            addToSpatialHash(x, y, z, id);
+
+            if (['coin', 'hazard', 'goal', 'jumppad', 'speedpad', 'enemy_spawner', 'turret', 'pickup_jetpack'].includes(def.type)) {
+                theBigBagOfStuffThatMakesTheGameWork.items.push({ mesh, x, y, z, def, active: true });
+            }
+        }
+
+        // yeet
+        function yeetTheBlockIntoOblivion(x, y, z) {
+            const key = `${x},${y},${z}`;
+            if (!theBigBagOfStuffThatMakesTheGameWork.voxels[key]) return;
+            
+            const mesh = theBigBagOfStuffThatMakesTheGameWork.meshes[key];
+            thePlaceWhereEverythingLives.remove(mesh);
+            if (mesh.geometry) mesh.geometry.dispose();
+            if (mesh.material) mesh.material.dispose();
+            // Clean up group children
+            if (mesh.children) {
+                 mesh.children.forEach(c => {
+                     if(c.geometry) c.geometry.dispose();
+                     if(c.material) c.material.dispose();
+                 });
+            }
+            
+            delete theBigBagOfStuffThatMakesTheGameWork.voxels[key];
+            delete theBigBagOfStuffThatMakesTheGameWork.meshes[key];
+            removeFromSpatialHash(x, y, z);
+            
+            theBigBagOfStuffThatMakesTheGameWork.items = theBigBagOfStuffThatMakesTheGameWork.items.filter(i => !(i.x === x && i.y === y && i.z === z));
+        }
+
+        // nuke it
+        function destroyEverythingAndStartOver() {
+            Object.keys(theBigBagOfStuffThatMakesTheGameWork.voxels).forEach(k => {
+                const [x, y, z] = k.split(',').map(Number);
+                yeetTheBlockIntoOblivion(x, y, z);
+            });
+            theBigBagOfStuffThatMakesTheGameWork.spatial = {};
+            
+            const limit = Math.floor(theBigBagOfStuffThatMakesTheGameWork.mapSize / 4);
+            for (let x = -limit; x < limit; x++) {
+                for (let z = -limit; z < limit; z++) {
+                    makeANewBlockAppear(x, 0, z, 1);
+                }
+            }
+        }
+
+        function makeTheMapBiggerOrSmaller(val) {
+            val = Math.max(10, Math.min(200, parseInt(val)));
+            theBigBagOfStuffThatMakesTheGameWork.mapSize = val;
+            thePlaceWhereEverythingLives.remove(theGridOnTheFloor);
+            theGridOnTheFloor = new THREE.GridHelper(val * 2, val * 2, 0x94a3b8, 0x334155);
+            thePlaceWhereEverythingLives.add(theGridOnTheFloor);
+            destroyEverythingAndStartOver();
+        }
+
+        function makeTheCameraGoZoomZoom(amount) {
+            if (theBigBagOfStuffThatMakesTheGameWork.mode !== 'EDIT') return;
+            theFloatingEye.fov += amount;
+            theFloatingEye.fov = Math.max(30, Math.min(120, theFloatingEye.fov)); 
+            theFloatingEye.updateProjectionMatrix();
+        }
+
+        // palette buttons
+        const palette = document.getElementById('block-palette');
+        THE_BLOCKS_WE_CAN_USE.forEach(b => {
+            const btn = document.createElement('div');
+            btn.className = 'palette-item flex flex-col items-center gap-1 min-w-[70px] cursor-pointer opacity-70 hover:opacity-100 transition-opacity rounded-lg border-2 border-transparent';
+            
+            // Image Generation
+            const svgString = getIcon(b.imgType, b.color);
+            const blob = new Blob([svgString], {type: 'image/svg+xml'});
+            const url = URL.createObjectURL(blob);
+            
+            btn.innerHTML = `
+                <div class="w-12 h-12 rounded bg-slate-800 shadow-md">
+                    <img src="${url}" class="w-full h-full object-contain p-2" draggable="false">
+                </div>
+                <span class="text-[9px] font-bold text-slate-400 uppercase tracking-wider">${b.name}</span>
+            `;
+            btn.onclick = () => {
+                theBigBagOfStuffThatMakesTheGameWork.blockId = b.id;
+                theBigBagOfStuffThatMakesTheGameWork.tool = 'brush';
+                updateTheButtonsAndStuff();
+                // Highlight active
+                document.querySelectorAll('.palette-item').forEach(el => el.classList.remove('active'));
+                btn.classList.add('active');
+            };
+            palette.appendChild(btn);
+        });
+
+        function pickTheRightToolForTheJob(t) {
+            theBigBagOfStuffThatMakesTheGameWork.tool = t;
+            updateTheButtonsAndStuff();
+        }
+
+        function updateTheButtonsAndStuff() {
+            document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
+            const btn = document.getElementById(`tool-${theBigBagOfStuffThatMakesTheGameWork.tool}`);
+            if (btn) btn.classList.add('active');
+            
+            const hint = document.getElementById('tool-hint');
+            hint.innerText = 
+                theBigBagOfStuffThatMakesTheGameWork.tool === 'box' ? "Arrow Keys: Look • Left Drag: Fill" :
+                theBigBagOfStuffThatMakesTheGameWork.tool === 'eraser' ? "Arrow Keys: Look • Left Click: Erase" :
+                "Arrow Keys: Look • WASD: Move • Left Click: Action";
+        }
+
+        // raycasting logic
+        function checkWhatTheMouseIsHoveringOver() {
+            theLaserPointerCheckingForClicks.setFromCamera(whereTheUserIsPointing, theFloatingEye);
+            const intersects = theLaserPointerCheckingForClicks.intersectObjects(thePlaceWhereEverythingLives.children, true); // true for recursive
+            
+            // Filter only blocks (userData.isBlock)
+            let hit = null;
+            for(let i=0; i<intersects.length; i++) {
+                // Traverse up to find the parent block group if hit child
+                let obj = intersects[i].object;
+                while(obj.parent && !obj.userData.isBlock && obj !== thePlaceWhereEverythingLives) {
+                    obj = obj.parent;
+                }
+                if(obj.userData.isBlock) {
+                    hit = { ...intersects[i], object: obj };
+                    break;
+                }
+            }
+            
+            if (hit) {
+                return {
+                    pos: hit.object.position.clone(),
+                    normal: hit.face.normal,
+                    voxel: { x: hit.object.userData.x, y: hit.object.userData.y, z: hit.object.userData.z }
+                };
+            }
+            
+            const t = -theLaserPointerCheckingForClicks.ray.origin.y / theLaserPointerCheckingForClicks.ray.direction.y;
+            if (t > 0 && t < 300) {
+                const p = theLaserPointerCheckingForClicks.ray.origin.clone().add(theLaserPointerCheckingForClicks.ray.direction.clone().multiplyScalar(t));
+                return {
+                    pos: p,
+                    normal: new THREE.Vector3(0, 1, 0),
+                    voxel: { x: Math.floor(p.x), y: 0, z: Math.floor(p.z) }
+                };
+            }
+            return null;
+        }
+
+        // events
+        window.addEventListener('contextmenu', e => e.preventDefault());
+
+        document.addEventListener('wheel', e => {
+            if (theBigBagOfStuffThatMakesTheGameWork.mode === 'EDIT') {
+                makeTheCameraGoZoomZoom(e.deltaY * 0.05);
+            }
+        });
+
+        document.addEventListener('mousedown', e => {
+            if (e.target.closest('#editor-ui') || e.target.closest('#game-overlay') || e.target.closest('#start-screen') || e.target.closest('button')) return;
+            
+            if (e.button === 2) {
+                theBigBagOfStuffThatMakesTheGameWork.mouse.rightDown = true;
+                return;
+            }
+
+            if (e.button !== 0) return;
+
+            if (theBigBagOfStuffThatMakesTheGameWork.mode === 'PLAY') {
+                return;
+            }
+
+            const hit = checkWhatTheMouseIsHoveringOver();
+            if (!hit) return;
+
+            if (theBigBagOfStuffThatMakesTheGameWork.tool === 'box' || (theBigBagOfStuffThatMakesTheGameWork.tool === 'eraser' && e.button === 0)) {
+                theBigBagOfStuffThatMakesTheGameWork.drag.active = true;
+                if (theBigBagOfStuffThatMakesTheGameWork.tool === 'eraser') {
+                    theBigBagOfStuffThatMakesTheGameWork.drag.start.set(hit.voxel.x, hit.voxel.y, hit.voxel.z);
+                } else {
+                    const n = hit.normal;
+                    theBigBagOfStuffThatMakesTheGameWork.drag.start.set(
+                        hit.voxel.x + (hit.pos.y > 0.1 ? n.x : 0),
+                        hit.voxel.y + (hit.pos.y > 0.1 ? n.y : 0),
+                        hit.voxel.z + (hit.pos.y > 0.1 ? n.z : 0)
+                    );
+                    if (hit.pos.y < 0.1) {
+                        theBigBagOfStuffThatMakesTheGameWork.drag.start.set(Math.floor(hit.pos.x), 0, Math.floor(hit.pos.z));
+                    }
+                }
+                
+                const min = theBigBagOfStuffThatMakesTheGameWork.drag.start.clone();
+                const max = theBigBagOfStuffThatMakesTheGameWork.drag.start.clone().addScalar(1);
+                theYellowBoxThingy.box = new THREE.Box3(min, max);
+                
+            } else {
+                if (theBigBagOfStuffThatMakesTheGameWork.tool === 'eraser') {
+                    yeetTheBlockIntoOblivion(hit.voxel.x, hit.voxel.y, hit.voxel.z);
+                } else {
+                    const n = hit.normal;
+                    const nx = hit.voxel.x + n.x;
+                    const ny = hit.voxel.y + n.y;
+                    const nz = hit.voxel.z + n.z;
+                    if (hit.pos.y < 0.1) {
+                        makeANewBlockAppear(Math.floor(hit.pos.x), 0, Math.floor(hit.pos.z), theBigBagOfStuffThatMakesTheGameWork.blockId);
+                    } else {
+                        makeANewBlockAppear(nx, ny, nz, theBigBagOfStuffThatMakesTheGameWork.blockId);
+                    }
+                }
+            }
+        });
+
+        document.addEventListener('mousemove', e => {
+            if (theBigBagOfStuffThatMakesTheGameWork.mode === 'EDIT') {
+                whereTheUserIsPointing.x = (e.clientX / window.innerWidth) * 2 - 1;
+                whereTheUserIsPointing.y = -(e.clientY / window.innerHeight) * 2 + 1;
+
+                const hit = checkWhatTheMouseIsHoveringOver();
+                
+                if (theBigBagOfStuffThatMakesTheGameWork.drag.active && hit) {
+                    const end = new THREE.Vector3(hit.voxel.x, hit.voxel.y, hit.voxel.z);
+                    if (theBigBagOfStuffThatMakesTheGameWork.tool === 'box' && hit.pos.y > 0.1) {
+                        end.add(hit.normal);
+                    }
+                    
+                    const min = new THREE.Vector3().minVectors(theBigBagOfStuffThatMakesTheGameWork.drag.start, end);
+                    const max = new THREE.Vector3().maxVectors(theBigBagOfStuffThatMakesTheGameWork.drag.start, end).addScalar(1);
+                    
+                    theYellowBoxThingy.box = new THREE.Box3(min, max);
+                    theYellowBoxThingy.visible = true;
+                    theBlueGhostBlock.visible = false;
+                } else if (hit) {
+                    theYellowBoxThingy.visible = false;
+                    theBlueGhostBlock.visible = true;
+                    
+                    if (theBigBagOfStuffThatMakesTheGameWork.tool === 'eraser') {
+                        theBlueGhostBlock.position.set(hit.voxel.x + 0.5, hit.voxel.y + 0.5, hit.voxel.z + 0.5);
+                        theBlueGhostBlock.material.color.setHex(0xff0000);
+                    } else {
+                        const pos = hit.pos.y < 0.1 ?
+                            new THREE.Vector3(Math.floor(hit.pos.x) + 0.5, 0.5, Math.floor(hit.pos.z) + 0.5) :
+                            new THREE.Vector3(
+                                hit.voxel.x + hit.normal.x + 0.5,
+                                hit.voxel.y + hit.normal.y + 0.5,
+                                hit.voxel.z + hit.normal.z + 0.5
+                            );
+                        theBlueGhostBlock.position.copy(pos);
+                        theBlueGhostBlock.material.color.setHex(0x3b82f6);
+                    }
+                } else {
+                    theBlueGhostBlock.visible = false;
+                    theYellowBoxThingy.visible = false;
+                }
+            }
+        });
+
+        document.addEventListener('mouseup', () => {
+            theBigBagOfStuffThatMakesTheGameWork.mouse.rightDown = false;
+            
+            if (theBigBagOfStuffThatMakesTheGameWork.drag.active) {
+                const box = theYellowBoxThingy.box;
+                if (box) {
+                    for (let x = box.min.x; x < box.max.x; x++) {
+                        for (let y = box.min.y; y < box.max.y; y++) {
+                            for (let z = box.min.z; z < box.max.z; z++) {
+                                if (theBigBagOfStuffThatMakesTheGameWork.tool === 'eraser') {
+                                    yeetTheBlockIntoOblivion(x, y, z);
+                                } else {
+                                    makeANewBlockAppear(x, y, z, theBigBagOfStuffThatMakesTheGameWork.blockId);
+                                }
+                            }
+                        }
+                    }
+                }
+                theBigBagOfStuffThatMakesTheGameWork.drag.active = false;
+                theYellowBoxThingy.visible = false;
+            }
+        });
+
+        // keyboard stuff
+        function processTheArrowKeysAndStuff() {
+            const rotSpeed = 0.04;
+            
+            if (theBigBagOfStuffThatMakesTheGameWork.keys.ArrowLeft) theBigBagOfStuffThatMakesTheGameWork.theLittleGuyRunningAround.rot.y += rotSpeed;
+            if (theBigBagOfStuffThatMakesTheGameWork.keys.ArrowRight) theBigBagOfStuffThatMakesTheGameWork.theLittleGuyRunningAround.rot.y -= rotSpeed;
+            if (theBigBagOfStuffThatMakesTheGameWork.keys.ArrowUp) theBigBagOfStuffThatMakesTheGameWork.theLittleGuyRunningAround.rot.x += rotSpeed;
+            if (theBigBagOfStuffThatMakesTheGameWork.keys.ArrowDown) theBigBagOfStuffThatMakesTheGameWork.theLittleGuyRunningAround.rot.x -= rotSpeed;
+
+            theBigBagOfStuffThatMakesTheGameWork.theLittleGuyRunningAround.rot.x = Math.max(-1.5, Math.min(1.5, theBigBagOfStuffThatMakesTheGameWork.theLittleGuyRunningAround.rot.x));
+
+            if (theBigBagOfStuffThatMakesTheGameWork.mode === 'EDIT') {
+                theFloatingEye.quaternion.setFromEuler(theBigBagOfStuffThatMakesTheGameWork.theLittleGuyRunningAround.rot);
+            }
+        }
+
+        document.addEventListener('keydown', e => {
+            if (e.code === 'Space') e.preventDefault();
+            theBigBagOfStuffThatMakesTheGameWork.keys[e.code] = true;
+            
+            if (theBigBagOfStuffThatMakesTheGameWork.mode === 'EDIT' && !e.repeat) {
+                const speed = e.shiftKey ? 1 : 0.5;
+                const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(theFloatingEye.quaternion);
+                const right = new THREE.Vector3(1, 0, 0).applyQuaternion(theFloatingEye.quaternion);
+                
+                if (e.code === 'KeyW') theFloatingEye.position.sub(fwd.multiplyScalar(speed));
+                if (e.code === 'KeyS') theFloatingEye.position.add(fwd.multiplyScalar(speed));
+                if (e.code === 'KeyD') theFloatingEye.position.sub(right.multiplyScalar(speed)); 
+                if (e.code === 'KeyA') theFloatingEye.position.add(right.multiplyScalar(speed)); 
+            }
+        });
+
+        document.addEventListener('keyup', e => {
+            theBigBagOfStuffThatMakesTheGameWork.keys[e.code] = false;
+        });
+
+        // physics is hard
+        function isThereABlockHere(x, y, z) {
+            const key = `${Math.floor(x)},${Math.floor(y)},${Math.floor(z)}`;
+            const id = theBigBagOfStuffThatMakesTheGameWork.voxels[key];
+            if (id) {
+                const def = THE_BLOCKS_WE_CAN_USE.find(b => b.id === id);
+                if (def && (def.type === 'solid' || def.type === 'turret')) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        function checkLiquid(p) {
+            const x = Math.floor(p.pos.x);
+            const y = Math.floor(p.pos.y + 0.5); 
+            const z = Math.floor(p.pos.z);
+            const key = `${x},${y},${z}`;
+            const id = theBigBagOfStuffThatMakesTheGameWork.voxels[key];
+            
+            p.inWater = false;
+            if (id) {
+                const def = THE_BLOCKS_WE_CAN_USE.find(b => b.id === id);
+                if (def && def.type === 'liquid') {
+                    p.inWater = true;
+                }
+            }
+        }
+
+        function preventGoingThroughWalls(pos, vel, width, height) {
+            const steps = Math.max(1, Math.ceil(vel.length() * 10));
+            const stepVel = vel.clone().divideScalar(steps);
+            
+            for (let i = 0; i < steps; i++) {
+                const testPos = pos.clone().add(stepVel);
+                
+                const corners = [
+                    new THREE.Vector3(testPos.x - width, testPos.y, testPos.z - width),
+                    new THREE.Vector3(testPos.x + width, testPos.y, testPos.z - width),
+                    new THREE.Vector3(testPos.x - width, testPos.y, testPos.z + width),
+                    new THREE.Vector3(testPos.x + width, testPos.y, testPos.z + width),
+                    new THREE.Vector3(testPos.x - width, testPos.y + height, testPos.z - width),
+                    new THREE.Vector3(testPos.x + width, testPos.y + height, testPos.z - width),
+                    new THREE.Vector3(testPos.x - width, testPos.y + height, testPos.z + width),
+                    new THREE.Vector3(testPos.x + width, testPos.y + height, testPos.z + width)
+                ];
+                
+                let collision = false;
+                for (const corner of corners) {
+                    if (isThereABlockHere(corner.x, corner.y, corner.z)) {
+                        collision = true;
+                        break;
+                    }
+                }
+                
+                if (collision) {
+                    return { pos: pos.clone(), collided: true };
+                }
+                
+                pos.copy(testPos);
+            }
+            
+            return { pos, collided: false };
+        }
+
+        function checkGroundBelow(pos, radius) {
+            const checkY = pos.y - THE_RULES_OF_PHYSICS.GROUND_DETECT_DIST;
+            const samples = 5;
+            
+            for (let i = 0; i < samples; i++) {
+                const angle = (i / samples) * Math.PI * 2;
+                const x = pos.x + Math.cos(angle) * radius * 0.7;
+                const z = pos.z + Math.sin(angle) * radius * 0.7;
+                
+                if (isThereABlockHere(x, checkY, z)) {
+                    return true;
+                }
+            }
+            
+            if (isThereABlockHere(pos.x, checkY, pos.z)) {
+                return true;
+            }
+            
+            return false;
+        }
+
+        // the main loop thingy
+        function doAllTheMathsForEveryFrame(deltaTime) {
+            const dt = Math.min(deltaTime, 0.05); 
+            const gameOver = theBigBagOfStuffThatMakesTheGameWork.theLittleGuyRunningAround.dead || theBigBagOfStuffThatMakesTheGameWork.theLittleGuyRunningAround.won;
+
+            theBigBagOfStuffThatMakesTheGameWork.entities.forEach((e, i) => {
+                if (e.type === 'enemy' && !gameOver) {
+                    const dir = new THREE.Vector3()
+                        .subVectors(theBigBagOfStuffThatMakesTheGameWork.theLittleGuyRunningAround.pos, e.pos)
+                        .normalize()
+                        .multiplyScalar(0.05 * (dt / 0.016));
+                    
+                    e.pos.add(dir);
+                    e.mesh.position.copy(e.pos);
+                    e.mesh.lookAt(theBigBagOfStuffThatMakesTheGameWork.theLittleGuyRunningAround.pos);
+                    
+                    if (e.pos.distanceTo(theBigBagOfStuffThatMakesTheGameWork.theLittleGuyRunningAround.pos) < 1.0) {
+                        oopsYouDied();
+                    }
+                }
+                
+                if (e.type === 'bullet') {
+                    e.pos.add(e.vel.clone().multiplyScalar(dt / 0.016));
+                    e.mesh.position.copy(e.pos);
+                    
+                    if (!gameOver && e.pos.distanceTo(theBigBagOfStuffThatMakesTheGameWork.theLittleGuyRunningAround.pos) < 0.9) {
+                        oopsYouDied();
+                    }
+                    
+                    if (e.pos.distanceTo(theBigBagOfStuffThatMakesTheGameWork.theLittleGuyRunningAround.pos) > 60) {
+                        thePlaceWhereEverythingLives.remove(e.mesh);
+                        theBigBagOfStuffThatMakesTheGameWork.entities.splice(i, 1);
+                    }
+                }
+            });
+
+            if (!gameOver && Math.random() < 0.015) {
+                theBigBagOfStuffThatMakesTheGameWork.items.forEach(item => {
+                    if (item.def.type === 'turret' && item.active) {
+                        const turretPos = new THREE.Vector3(item.x + 0.5, item.y + 0.5, item.z + 0.5);
+                        if (turretPos.distanceTo(theBigBagOfStuffThatMakesTheGameWork.theLittleGuyRunningAround.pos) < 25) {
+                            const dir = new THREE.Vector3()
+                                .subVectors(theBigBagOfStuffThatMakesTheGameWork.theLittleGuyRunningAround.pos, turretPos)
+                                .normalize();
+                            shootABullet(turretPos, dir);
+                        }
+                    }
+                });
+            }
+
+            if (gameOver) return;
+
+            const p = theBigBagOfStuffThatMakesTheGameWork.theLittleGuyRunningAround;
+            
+            const moveSpeed = (theBigBagOfStuffThatMakesTheGameWork.keys.ShiftLeft ? THE_RULES_OF_PHYSICS.SPRINT_SPEED : THE_RULES_OF_PHYSICS.MOVE_SPEED) * p.speed;
+            const fwd = new THREE.Vector3(0, 0, -1).applyEuler(new THREE.Euler(0, p.rot.y, 0));
+            const right = new THREE.Vector3(1, 0, 0).applyEuler(new THREE.Euler(0, p.rot.y, 0));
+            const move = new THREE.Vector3();
+            
+            if (theBigBagOfStuffThatMakesTheGameWork.keys.KeyW) move.sub(fwd);
+            if (theBigBagOfStuffThatMakesTheGameWork.keys.KeyS) move.add(fwd);
+            if (theBigBagOfStuffThatMakesTheGameWork.keys.KeyD) move.sub(right);
+            if (theBigBagOfStuffThatMakesTheGameWork.keys.KeyA) move.add(right);
+            
+            if (move.length() > 0) {
+                move.normalize().multiplyScalar(moveSpeed);
+            }
+
+            checkLiquid(p);
+
+            const wasOnGround = p.onGround;
+            p.onGround = checkGroundBelow(p.pos, THE_RULES_OF_PHYSICS.PLAYER_RADIUS);
+            
+            if (wasOnGround && !p.onGround) {
+                p.coyoteTime = 0.15;
+            }
+            if (p.coyoteTime > 0) {
+                p.coyoteTime -= dt;
+            }
+
+            let friction = (p.onGround || p.coyoteTime > 0) ? THE_RULES_OF_PHYSICS.GROUND_FRICTION : THE_RULES_OF_PHYSICS.AIR_CONTROL;
+            let gravity = THE_RULES_OF_PHYSICS.GRAVITY;
+            let jumpPower = THE_RULES_OF_PHYSICS.JUMP_POWER;
+
+            if (p.inWater) {
+                gravity = 0.005; 
+                friction = 0.15; 
+                jumpPower = 0.15; 
+                
+                if (theBigBagOfStuffThatMakesTheGameWork.keys.ShiftLeft) p.vel.y -= 0.02;
+            }
+
+            if (p.hasJetpack && theBigBagOfStuffThatMakesTheGameWork.keys.Space && !p.inWater) {
+                p.vel.y += 0.04 * (dt/0.016);
+                p.vel.y = Math.min(p.vel.y, 0.4);
+                gravity = 0;
+            }
+
+            p.vel.x += (move.x - p.vel.x) * friction;
+            p.vel.z += (move.z - p.vel.z) * friction;
+
+            p.vel.y -= gravity * (dt / 0.016);
+
+            if (theBigBagOfStuffThatMakesTheGameWork.keys.Space) {
+                if ((p.onGround || p.coyoteTime > 0) && !p.jumpBuffered && !p.inWater && !p.hasJetpack) {
+                    p.vel.y = jumpPower;
+                    p.onGround = false;
+                    p.coyoteTime = 0;
+                    p.jumpBuffered = true;
+                } else if (p.inWater) {
+                    p.vel.y += 0.02;
+                }
+            } else {
+                p.jumpBuffered = false;
+            }
+
+            const testX = preventGoingThroughWalls(
+                new THREE.Vector3(p.pos.x, p.pos.y, p.pos.z),
+                new THREE.Vector3(p.vel.x * (dt / 0.016), 0, 0),
+                THE_RULES_OF_PHYSICS.PLAYER_RADIUS,
+                THE_RULES_OF_PHYSICS.PLAYER_HEIGHT
+            );
+            
+            if (!testX.collided) {
+                p.pos.x = testX.pos.x;
+            } else {
+                p.vel.x = 0;
+            }
+
+            const testZ = preventGoingThroughWalls(
+                new THREE.Vector3(p.pos.x, p.pos.y, p.pos.z),
+                new THREE.Vector3(0, 0, p.vel.z * (dt / 0.016)),
+                THE_RULES_OF_PHYSICS.PLAYER_RADIUS,
+                THE_RULES_OF_PHYSICS.PLAYER_HEIGHT
+            );
+            
+            if (!testZ.collided) {
+                p.pos.z = testZ.pos.z;
+            } else {
+                p.vel.z = 0;
+            }
+
+            const testY = preventGoingThroughWalls(
+                new THREE.Vector3(p.pos.x, p.pos.y, p.pos.z),
+                new THREE.Vector3(0, p.vel.y * (dt / 0.016), 0),
+                THE_RULES_OF_PHYSICS.PLAYER_RADIUS,
+                THE_RULES_OF_PHYSICS.PLAYER_HEIGHT
+            );
+            
+            if (!testY.collided) {
+                p.pos.y = testY.pos.y;
+            } else {
+                if (p.vel.y < 0) {
+                    p.onGround = true;
+                }
+                p.vel.y = 0;
+            }
+
+            if (p.pos.y < 0) {
+                p.pos.y = 0;
+                p.onGround = true;
+                p.vel.y = 0;
+            }
+
+            theBlueBoxManMesh.position.copy(p.pos);
+            theBlueBoxManMesh.position.y += THE_RULES_OF_PHYSICS.PLAYER_HEIGHT / 2;
+            theBlueBoxManMesh.rotation.set(0, p.rot.y, 0);
+
+            const camDist = 8;
+            
+            const hDist = camDist * Math.cos(p.rot.x);
+            const vDist = camDist * Math.sin(p.rot.x);
+
+            const cx = p.pos.x - hDist * Math.sin(p.rot.y);
+            const cz = p.pos.z - hDist * Math.cos(p.rot.y);
+            const cy = p.pos.y + THE_RULES_OF_PHYSICS.CAM_HEIGHT_OFFSET - vDist;
+
+            const targetCamPos = new THREE.Vector3(cx, cy, cz);
+            
+            theFloatingEye.position.lerp(targetCamPos, 0.2); 
+            theFloatingEye.lookAt(p.pos.x, p.pos.y + THE_RULES_OF_PHYSICS.CAM_HEIGHT_OFFSET, p.pos.z);
+
+            seeIfWeTouchedSomethingCool(p);
+
+            if(p.pos.y < -30) {
+                oopsYouDied();
+            }
+        }
+
+        function seeIfWeTouchedSomethingCool(p) {
+            theBigBagOfStuffThatMakesTheGameWork.items.forEach(item => {
+                if (!item.active) return;
+                
+                const itemPos = new THREE.Vector3(item.x + 0.5, item.y + 0.5, item.z + 0.5);
+                const dist = itemPos.distanceTo(p.pos);
+                
+                if (dist < 1.2) {
+                    switch (item.def.type) {
+                        case 'coin':
+                            theBigBagOfStuffThatMakesTheGameWork.score += 100;
+                            document.getElementById('score-val').innerText = theBigBagOfStuffThatMakesTheGameWork.score;
+                            thePlaceWhereEverythingLives.remove(item.mesh);
+                            item.active = false;
+                            break;
+                        case 'hazard':
+                            oopsYouDied();
+                            break;
+                        case 'goal':
+                            yayYouWon();
+                            break;
+                        case 'jumppad':
+                            p.vel.y = 0.95;
+                            p.onGround = false;
+                            break;
+                        case 'speedpad':
+                            p.speed = 2.5;
+                            setTimeout(() => p.speed = 1, 2500);
+                            break;
+                        case 'pickup_jetpack':
+                            p.hasJetpack = true;
+                            thePlaceWhereEverythingLives.remove(item.mesh);
+                            item.active = false;
+                            document.getElementById('score-val').innerHTML += " <span style='color:#f97316'>[JETPACK]</span>";
+                            break;
+                    }
+                }
+            });
+        }
+
+        function shootABullet(pos, dir) {
+            const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.2), bulletMat);
+            mesh.position.copy(pos);
+            thePlaceWhereEverythingLives.add(mesh);
+            theBigBagOfStuffThatMakesTheGameWork.entities.push({
+                type: 'bullet',
+                mesh,
+                pos: pos.clone(),
+                vel: dir.multiplyScalar(0.45)
+            });
+        }
+
+        function summonABadGuy(pos) {
+            const mesh = new THREE.Mesh(boxGeo, enemyMat);
+            mesh.position.copy(pos);
+            mesh.scale.set(0.8, 0.8, 0.8);
+            mesh.castShadow = true;
+            thePlaceWhereEverythingLives.add(mesh);
+            theBigBagOfStuffThatMakesTheGameWork.entities.push({ type: 'enemy', mesh, pos });
+        }
+
+        function oopsYouDied() {
+            if (theBigBagOfStuffThatMakesTheGameWork.theLittleGuyRunningAround.dead) return;
+            theBigBagOfStuffThatMakesTheGameWork.theLittleGuyRunningAround.dead = true;
+            
+            const overlay = document.getElementById('game-overlay');
+            overlay.classList.remove('hidden');
+            
+            document.getElementById('crosshair').classList.add('hidden');
+            document.getElementById('game-hud').classList.add('hidden');
+
+            document.getElementById('overlay-title').innerText = "GAME OVER";
+            document.getElementById('overlay-title').className = "text-6xl font-black mb-4 text-red-500 drop-shadow-lg";
+            document.getElementById('overlay-msg').innerText = `Score: ${theBigBagOfStuffThatMakesTheGameWork.score}`;
+        }
+
+        function yayYouWon() {
+            if (theBigBagOfStuffThatMakesTheGameWork.theLittleGuyRunningAround.won) return;
+            theBigBagOfStuffThatMakesTheGameWork.theLittleGuyRunningAround.won = true;
+            
+            const overlay = document.getElementById('game-overlay');
+            overlay.classList.remove('hidden');
+
+            document.getElementById('crosshair').classList.add('hidden');
+            document.getElementById('game-hud').classList.add('hidden');
+
+            document.getElementById('overlay-title').innerText = "VICTORY!";
+            document.getElementById('overlay-title').className = "text-6xl font-black mb-4 text-yellow-400 drop-shadow-lg";
+            document.getElementById('overlay-msg').innerText = `Final Score: ${theBigBagOfStuffThatMakesTheGameWork.score}`;
+        }
+
+        function restartBecauseYouDiedOrWon() {
+            theBigBagOfStuffThatMakesTheGameWork.theLittleGuyRunningAround.dead = false;
+            theBigBagOfStuffThatMakesTheGameWork.theLittleGuyRunningAround.won = false;
+            theBigBagOfStuffThatMakesTheGameWork.theLittleGuyRunningAround.vel.set(0, 0, 0);
+            theBigBagOfStuffThatMakesTheGameWork.theLittleGuyRunningAround.coyoteTime = 0;
+            theBigBagOfStuffThatMakesTheGameWork.theLittleGuyRunningAround.jumpBuffered = false;
+            theBigBagOfStuffThatMakesTheGameWork.theLittleGuyRunningAround.hasJetpack = false;
+            theBigBagOfStuffThatMakesTheGameWork.theLittleGuyRunningAround.inWater = false;
+            theBigBagOfStuffThatMakesTheGameWork.score = 0;
+            
+            document.getElementById('score-val').innerText = "0";
+            document.getElementById('game-overlay').classList.add('hidden');
+            
+            theBigBagOfStuffThatMakesTheGameWork.entities.forEach(e => {
+                thePlaceWhereEverythingLives.remove(e.mesh);
+                if (e.mesh.geometry) e.mesh.geometry.dispose();
+                if (e.mesh.material) e.mesh.material.dispose();
+            });
+            theBigBagOfStuffThatMakesTheGameWork.entities = [];
+            
+            theBigBagOfStuffThatMakesTheGameWork.items.forEach(item => {
+                if (!item.active && item.mesh) {
+                    thePlaceWhereEverythingLives.add(item.mesh);
+                    item.active = true;
+                }
+                if (item.def.type === 'enemy_spawner') {
+                    summonABadGuy(new THREE.Vector3(item.x + 0.5, item.y + 1, item.z + 0.5));
+                }
+            });
+
+            let spawn = new THREE.Vector3(0, 5, 0);
+            const spawnKey = Object.keys(theBigBagOfStuffThatMakesTheGameWork.voxels).find(k => theBigBagOfStuffThatMakesTheGameWork.voxels[k] === 10);
+            if (spawnKey) {
+                const [x, y, z] = spawnKey.split(',').map(Number);
+                spawn.set(x + 0.5, y + 2, z + 0.5);
+            }
+            theBigBagOfStuffThatMakesTheGameWork.theLittleGuyRunningAround.pos.copy(spawn);
+            
+            theBigBagOfStuffThatMakesTheGameWork.theLittleGuyRunningAround.rot.set(-0.5, 0, 0, 'YXZ');
+            
+            const camDist = 8;
+            const cx = spawn.x;
+            const cz = spawn.z + camDist;
+            const cy = spawn.y + 5;
+            theFloatingEye.position.set(cx, cy, cz);
+            theFloatingEye.lookAt(spawn.x, spawn.y + 2, spawn.z);
+
+            if(theBigBagOfStuffThatMakesTheGameWork.mode === 'PLAY') {
+                document.getElementById('crosshair').classList.remove('hidden');
+                document.getElementById('game-hud').classList.remove('hidden');
+            }
+        }
+
+        function switchBetweenMakingAndPlaying(mode) {
+            theBigBagOfStuffThatMakesTheGameWork.mode = mode;
+            const editBtn = document.getElementById('modeEdit');
+            const playBtn = document.getElementById('modePlay');
+            
+            if (editBtn) editBtn.className = mode === 'EDIT' ? "px-3 py-1 text-xs font-bold rounded bg-blue-600 text-white shadow" : "px-3 py-1 text-xs font-bold rounded text-slate-400 hover:text-white";
+            if (playBtn) playBtn.className = mode === 'PLAY' ? "px-3 py-1 text-xs font-bold rounded bg-blue-600 text-white shadow" : "px-3 py-1 text-xs font-bold rounded text-slate-400 hover:text-white";
+            
+            if (mode === 'EDIT') {
+                document.getElementById('game-hud').classList.add('hidden');
+                document.getElementById('crosshair').classList.add('hidden');
+                document.getElementById('game-overlay').classList.add('hidden');
+                
+                theBlueGhostBlock.visible = true;
+                theBlueBoxManMesh.visible = false;
+                theRGBLines.visible = true;
+                theGridOnTheFloor.visible = true;
+                
+                if (theFloatingEye.position.y < 0) {
+                    theFloatingEye.position.set(0, 10, 15);
+                }
+            } else {
+                document.getElementById('game-hud').classList.remove('hidden');
+                document.getElementById('crosshair').classList.remove('hidden');
+                theBlueGhostBlock.visible = false;
+                theBlueBoxManMesh.visible = true;
+                theYellowBoxThingy.visible = false;
+                theRGBLines.visible = false;
+                theGridOnTheFloor.visible = false;
+                
+                restartBecauseYouDiedOrWon();
+            }
+        }
+
+        function saveTheWholeDarnThingToAFile() {
+            const data = {
+                voxels: theBigBagOfStuffThatMakesTheGameWork.voxels,
+                mapSize: theBigBagOfStuffThatMakesTheGameWork.mapSize
+            };
+            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = 'gamerkraft_world.json';
+            a.click();
+        }
+
+        function loadTheFileAndPrayItWorks(input) {
+            const reader = new FileReader();
+            reader.onload = e => {
+                try {
+                    const data = JSON.parse(e.target.result);
+                    destroyEverythingAndStartOver();
+                    
+                    if (data.mapSize) {
+                        theBigBagOfStuffThatMakesTheGameWork.mapSize = data.mapSize;
+                        document.getElementById('mapSizeInput').value = data.mapSize;
+                        thePlaceWhereEverythingLives.remove(theGridOnTheFloor);
+                        theGridOnTheFloor = new THREE.GridHelper(data.mapSize * 2, data.mapSize * 2, 0x94a3b8, 0x334155);
+                        thePlaceWhereEverythingLives.add(theGridOnTheFloor);
+                    }
+                    
+                    Object.keys(data.voxels).forEach(key => {
+                        const [x, y, z] = key.split(',').map(Number);
+                        makeANewBlockAppear(x, y, z, data.voxels[key]);
+                    });
+                    showNotification('World Loaded Successfully', 'success');
+                } catch (err) {
+                    showNotification('Error loading file', 'error');
+                }
+            };
+            reader.readAsText(input.files[0]);
+        }
+
+        function turnThisIntoARealGameFile() {
+            let html = document.documentElement.outerHTML;
+            const exportData = {
+                voxels: theBigBagOfStuffThatMakesTheGameWork.voxels,
+                mapSize: theBigBagOfStuffThatMakesTheGameWork.mapSize
+            };
+            html = html.replace(
+                '</head>',
+                `<script>window.EXPORTED_WORLD=${JSON.stringify(exportData)};
+                window.addEventListener('DOMContentLoaded', () => {
+                    document.body.classList.add('exported');
+                });
+                <\/script></head>`
+            );
+            
+            const blob = new Blob([html], { type: 'text/html' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = 'GamerKraft_Game.html';
+            a.click();
+        }
+
+        if (window.EXPORTED_WORLD) {
+            if (window.EXPORTED_WORLD.mapSize) {
+                theBigBagOfStuffThatMakesTheGameWork.mapSize = window.EXPORTED_WORLD.mapSize;
+            }
+            Object.keys(window.EXPORTED_WORLD.voxels).forEach(key => {
+                const [x, y, z] = key.split(',').map(Number);
+                makeANewBlockAppear(x, y, z, window.EXPORTED_WORLD.voxels[key]);
+            });
+
+            document.getElementById('start-screen').style.setProperty('display', 'none', 'important');
+            
+            setTimeout(() => switchBetweenMakingAndPlaying('PLAY'), 50);
+        }
+
+        function letsGetThisPartyStarted() {
+            document.getElementById('start-screen').style.display = 'none';
+            switchBetweenMakingAndPlaying('PLAY');
+        }
+
+        function showMeTheNerdyNumbers() {
+            document.getElementById('debug-panel').classList.toggle('hidden');
+        }
+
+        function updateDebugInfo() {
+            const p = theBigBagOfStuffThatMakesTheGameWork.theLittleGuyRunningAround;
+            const content = `
+                POS: (${p.pos.x.toFixed(1)}, ${p.pos.y.toFixed(1)}, ${p.pos.z.toFixed(1)})<br>
+                VEL: (${p.vel.x.toFixed(2)}, ${p.vel.y.toFixed(2)}, ${p.vel.z.toFixed(2)})<br>
+                GROUND: ${p.onGround} | WATER: ${p.inWater} | JETPACK: ${p.hasJetpack}<br>
+                VOXELS: ${Object.keys(theBigBagOfStuffThatMakesTheGameWork.voxels).length}<br>
+                ENTITIES: ${theBigBagOfStuffThatMakesTheGameWork.entities.length}<br>
+                FPS: ${theBigBagOfStuffThatMakesTheGameWork.time.fps}
+            `;
+            document.getElementById('debug-content').innerHTML = content;
+        }
+
+        lucide.createIcons();
+        
+        theFloatingEye.position.set(0, 10, 15);
+        theFloatingEye.lookAt(0, 0, 0);
+        theBigBagOfStuffThatMakesTheGameWork.theLittleGuyRunningAround.rot.set(-0.5, 0, 0);
+        theFloatingEye.quaternion.setFromEuler(theBigBagOfStuffThatMakesTheGameWork.theLittleGuyRunningAround.rot);
+
+        let frameCount = 0;
+        let lastFpsUpdate = performance.now();
+
+        function keepDrawingItOverAndOver() {
+            requestAnimationFrame(keepDrawingItOverAndOver);
+            
+            const now = performance.now();
+            theBigBagOfStuffThatMakesTheGameWork.time.delta = (now - theBigBagOfStuffThatMakesTheGameWork.time.last) / 1000;
+            theBigBagOfStuffThatMakesTheGameWork.time.last = now;
+            
+            frameCount++;
+            if (now - lastFpsUpdate > 500) {
+                theBigBagOfStuffThatMakesTheGameWork.time.fps = Math.round((frameCount * 1000) / (now - lastFpsUpdate));
+                document.getElementById('fps-val').innerText = theBigBagOfStuffThatMakesTheGameWork.time.fps;
+                frameCount = 0;
+                lastFpsUpdate = now;
+            }
+            
+            if (theBigBagOfStuffThatMakesTheGameWork.mode === 'PLAY') {
+                doAllTheMathsForEveryFrame(theBigBagOfStuffThatMakesTheGameWork.time.delta);
+            }
+            
+            processTheArrowKeysAndStuff();
+
+            if (!document.getElementById('debug-panel').classList.contains('hidden')) {
+                updateDebugInfo();
+            }
+            
+            const dir = new THREE.Vector3();
+            theFloatingEye.getWorldDirection(dir);
+            const angle = Math.atan2(dir.x, dir.z);
+            const deg = THREE.MathUtils.radToDeg(angle);
+            const compass = document.getElementById('compass-face');
+            if(compass) compass.style.transform = `rotate(${deg - 180}deg)`;
+
+            thePainter.render(thePlaceWhereEverythingLives, theFloatingEye);
+        }
+        
+        keepDrawingItOverAndOver();
+
+        window.addEventListener('resize', () => {
+            theFloatingEye.aspect = window.innerWidth / window.innerHeight;
+            theFloatingEye.updateProjectionMatrix();
+            thePainter.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>
