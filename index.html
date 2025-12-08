@@ -641,8 +641,15 @@
                 let cardTop = rect.bottom + 20;
                 let cardLeft = rect.left;
                 
-                if (cardLeft + 350 > window.innerWidth) cardLeft = window.innerWidth - 370;
-                if (cardTop + 200 > window.innerHeight) cardTop = rect.top - 220;
+                // Specific logic for sidebar to place card to the right
+                if (step.target === "#tools-sidebar") {
+                    cardTop = rect.top;
+                    cardLeft = rect.right + 20;
+                } else {
+                    // Default logic for top/bottom bars
+                    if (cardLeft + 350 > window.innerWidth) cardLeft = window.innerWidth - 370;
+                    if (cardTop + 200 > window.innerHeight) cardTop = rect.top - 220;
+                }
 
                 card.style.top = `${cardTop}px`;
                 card.style.left = `${cardLeft}px`;
