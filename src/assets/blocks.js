@@ -1,2 +1,2 @@
-/** Immutable block catalogue used by editor palettes and the world renderer. */
-export { blocks } from './index.js';
+/** Immutable runtime view of the data-driven block catalogue. */
+export { BLOCKS as blocks, BLOCKS } from './block-definitions.js';
