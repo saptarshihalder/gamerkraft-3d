@@ -1,1 +1,1 @@
-export { BLOCKS as blocks } from '../runtime/engine.js';
+export { BLOCKS as blocks, BLOCKS } from './block-definitions.js';

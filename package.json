@@ -1,0 +1,9 @@
+{
+  "name": "gamerkraft-3d-beta",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:assets": "node tools/gk-build.mjs",
+    "test": "node --test"
+  }
+}
