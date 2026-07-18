@@ -74,11 +74,25 @@ GK.setMode('PLAY')               // start playtesting
 GK.state.player.pos              // live player position
 ```
 
-### Save format
+### Scene save format
 
 ```json
-{ "version": 2, "mapSize": 20, "voxels": { "x,y,z": blockId } }
+{
+  "version": 3,
+  "id": "scene-uuid",
+  "assets": [{ "id": "asset-uuid", "type": "block-catalog", "uri": "gamerkraft://assets/blocks" }],
+  "entities": [{
+    "id": "entity-uuid",
+    "parentId": null,
+    "transform": { "position": [0, 0, 0], "rotation": [0, 0, 0, 1], "scale": [1, 1, 1] },
+    "components": { "Terrain": { "type": "terrain", "mapSize": 20, "voxels": { "x,y,z": 1 }, "blockCatalogAssetId": "asset-uuid" } }
+  }]
+}
 ```
+
+Scene and asset identifiers are UUIDs. Meshes, physics bodies, audio nodes, and
+other backend state are rebuilt from component payloads and are not serialized.
+Legacy v1/v2 `{ mapSize, voxels }` saves are imported automatically.
 
 ### Future work
 - Greedy meshing / hidden-face culling to cut triangle counts further on huge maps
