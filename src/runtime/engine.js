@@ -4,6 +4,8 @@
     import { importScene, terrainEntity } from '../world/scene-importer.js';
     import { RepresentationSystems } from '../world/systems.js';
     import { BLOCKS, BLOCK_CATALOG_GUID } from '../assets/block-definitions.js';
+    import { createDefaultActionMap, SimulationInputBuffer } from '../input/actions.js';
+    import { VoxelAabbPhysicsWorld } from '../physics/voxel-aabb-world.js';
     // ============================================================================
     // GamerKraft 3D Engine v2
     //   Core        - renderer, scene, camera, fixed-timestep loop
@@ -50,6 +52,10 @@
         CAM_HEIGHT_OFFSET: 2.0,
         MAX_HEIGHT: 64
     };
+    // Browser events write semantic actions; fixed ticks consume recorded frames.
+    const actionMap = createDefaultActionMap();
+    const simulationInputs = new SimulationInputBuffer();
+    let simulationTick = 0;
 
     // ------------------------------------------------------------- SVG icons --
     const getIcon = (type, color) => {
@@ -578,6 +584,10 @@
         });
     }
     scene.add(World.group);
+    // The runtime only retains this query API, allowing another physics backend
+    // to replace voxel collision without changing player simulation.
+    const physicsWorld = new VoxelAabbPhysicsWorld({ isSolidAt: (x, y, z) => World.isSolidAt(x, y, z) });
+    const physicsQuery = physicsWorld.query();
 
     function updateGrid() {
         if (grid) { scene.remove(grid); grid.geometry.dispose(); grid.material.dispose(); }
@@ -844,39 +854,6 @@
     };
 
     // --------------------------------------------------------------- Physics --
-    function boxIntersectsSolid(p, r, h) {
-        const ys = [p.y + 0.01, p.y + h * 0.5, p.y + h - 0.01];
-        for (const y of ys)
-            for (const dx of [-r, r])
-                for (const dz of [-r, r])
-                    if (World.isSolidAt(p.x + dx, y, p.z + dz)) return true;
-        return false;
-    }
-
-    function collideMove(pos, delta, r, h) {
-        const len = delta.length();
-        if (len < 1e-8) return { pos: pos.clone(), collided: false };
-        const steps = Math.max(1, Math.ceil(len / 0.05));
-        const stepV = delta.clone().divideScalar(steps);
-        const out = pos.clone();
-        for (let i = 0; i < steps; i++) {
-            const t = out.clone().add(stepV);
-            if (boxIntersectsSolid(t, r, h)) return { pos: out, collided: true };
-            out.copy(t);
-        }
-        return { pos: out, collided: false };
-    }
-
-    function checkGroundBelow(pos, radius) {
-        const y = pos.y - PHYS.GROUND_DETECT_DIST;
-        if (World.isSolidAt(pos.x, y, pos.z)) return true;
-        for (let i = 0; i < 4; i++) {
-            const a = (i / 4) * Math.PI * 2;
-            if (World.isSolidAt(pos.x + Math.cos(a) * radius * 0.7, y, pos.z + Math.sin(a) * radius * 0.7)) return true;
-        }
-        return false;
-    }
-
     // ---------------------------------------------------------------- Player --
     const Player = {
         facingDir() {
@@ -922,6 +899,7 @@
         step() {
             const p = state.player;
             if (state.gameOver) return;
+            const input = simulationInputs.read(simulationTick++);
 
             p.invuln = Math.max(0, p.invuln - PHYS.STEP);
             p.shootCool = Math.max(0, p.shootCool - PHYS.STEP);
@@ -943,19 +921,19 @@
             }
 
             // movement input
-            const moveSpeed = (state.keys.ShiftLeft ? PHYS.SPRINT_SPEED : PHYS.MOVE_SPEED) * p.speed;
+            const moveSpeed = (input.sprint ? PHYS.SPRINT_SPEED : PHYS.MOVE_SPEED) * p.speed;
             const fwd = new THREE.Vector3(Math.sin(p.rot.y), 0, Math.cos(p.rot.y));
             const right = new THREE.Vector3(fwd.z, 0, -fwd.x);
             const move = new THREE.Vector3();
-            if (state.keys.KeyW) move.add(fwd);
-            if (state.keys.KeyS) move.sub(fwd);
-            if (state.keys.KeyD) move.add(right);
-            if (state.keys.KeyA) move.sub(right);
+            if (input.move.z > 0) move.add(fwd);
+            if (input.move.z < 0) move.sub(fwd);
+            if (input.move.x > 0) move.add(right);
+            if (input.move.x < 0) move.sub(right);
             if (move.lengthSq() > 0) move.normalize().multiplyScalar(moveSpeed);
 
             // ground / coyote time
             const wasOnGround = p.onGround;
-            p.onGround = checkGroundBelow(p.pos, PHYS.PLAYER_RADIUS);
+            p.onGround = physicsQuery.probeGround({ position: p.pos, radius: PHYS.PLAYER_RADIUS, distance: PHYS.GROUND_DETECT_DIST });
             if (wasOnGround && !p.onGround) p.coyoteTime = 0.15;
             if (p.coyoteTime > 0) p.coyoteTime -= PHYS.STEP;
 
@@ -967,7 +945,7 @@
             if (p.inWater) { gravity = 0.005; friction = 0.15; jumpPower = 0.15; }
             if (p.onLadder) gravity = 0;
 
-            if (p.hasJetpack && state.keys.Space && !p.inWater) {
+            if (p.hasJetpack && input.jump && !p.inWater) {
                 p.vel.y = Math.min(p.vel.y + 0.04, 0.4);
                 gravity = 0;
                 Particles.burst(new THREE.Vector3(p.pos.x, p.pos.y + 0.2, p.pos.z), 0xf97316, 1, 0.05, 0.4);
@@ -978,10 +956,10 @@
             p.vel.y -= gravity;
 
             if (p.onLadder) {
-                if (state.keys.Space || state.keys.KeyW) p.vel.y = 0.12;
-                else if (state.keys.ShiftLeft) p.vel.y = -0.12;
+                if (input.jump || input.move.z > 0) p.vel.y = 0.12;
+                else if (input.sprint) p.vel.y = -0.12;
                 else p.vel.y = Math.max(p.vel.y, -0.03);
-            } else if (state.keys.Space) {
+            } else if (input.jump) {
                 if ((p.onGround || p.coyoteTime > 0) && !p.jumpHeld && !p.inWater && !p.hasJetpack) {
                     p.vel.y = jumpPower;
                     p.onGround = false;
@@ -992,21 +970,21 @@
                     p.vel.y += 0.02;
                 }
             }
-            if (!state.keys.Space) p.jumpHeld = false;
-            if (p.inWater && state.keys.ShiftLeft) p.vel.y -= 0.02;
+            if (!input.jump) p.jumpHeld = false;
+            if (p.inWater && input.sprint) p.vel.y -= 0.02;
 
             // axis-separated swept collision
             const r = PHYS.PLAYER_RADIUS, h = PHYS.PLAYER_HEIGHT;
-            let res = collideMove(p.pos, new THREE.Vector3(p.vel.x, 0, 0), r, h);
-            p.pos.x = res.pos.x;
+            let res = physicsQuery.moveAABB({ position: p.pos, delta: { x: p.vel.x, y: 0, z: 0 }, radius: r, height: h });
+            p.pos.x = res.position.x;
             if (res.collided) p.vel.x = 0;
 
-            res = collideMove(p.pos, new THREE.Vector3(0, 0, p.vel.z), r, h);
-            p.pos.z = res.pos.z;
+            res = physicsQuery.moveAABB({ position: p.pos, delta: { x: 0, y: 0, z: p.vel.z }, radius: r, height: h });
+            p.pos.z = res.position.z;
             if (res.collided) p.vel.z = 0;
 
-            res = collideMove(p.pos, new THREE.Vector3(0, p.vel.y, 0), r, h);
-            p.pos.y = res.pos.y;
+            res = physicsQuery.moveAABB({ position: p.pos, delta: { x: 0, y: p.vel.y, z: 0 }, radius: r, height: h });
+            p.pos.y = res.position.y;
             if (res.collided) {
                 if (p.vel.y < 0) p.onGround = true;
                 p.vel.y = 0;
@@ -1125,6 +1103,8 @@
 
     // ------------------------------------------------------------ Game modes --
     function restartGame() {
+        simulationTick = 0;
+        simulationInputs.clear();
         const p = state.player;
         p.dead = false; p.won = false;
         p.vel.set(0, 0, 0);
@@ -1344,7 +1324,7 @@
 
     // ----------------------------------------------------------------- Input --
     window.addEventListener('contextmenu', e => e.preventDefault());
-    window.addEventListener('blur', () => { state.keys = {}; state.mouse.rightDown = false; state.painting = false; });
+    window.addEventListener('blur', () => { state.keys = {}; actionMap.clear(); state.mouse.rightDown = false; state.painting = false; });
 
     container.addEventListener('wheel', e => {
         if (state.mode !== 'EDIT') return;
@@ -1368,6 +1348,7 @@
         if (e.ctrlKey && e.code === 'KeyY') { e.preventDefault(); if (state.mode === 'EDIT') Editor.redo(); return; }
         if (e.code === 'Space') e.preventDefault();
         state.keys[e.code] = true;
+        actionMap.setKey(e.code, true);
 
         if (e.repeat) return;
         if (e.code === 'KeyC' && state.mode === 'PLAY') {
@@ -1385,7 +1366,7 @@
         }
     });
 
-    document.addEventListener('keyup', e => { state.keys[e.code] = false; });
+    document.addEventListener('keyup', e => { state.keys[e.code] = false; actionMap.setKey(e.code, false); });
 
     document.addEventListener('mousedown', e => {
         Sound.ensure();
@@ -1596,6 +1577,7 @@
             // fixed-timestep simulation
             state.time.acc += dt;
             while (state.time.acc >= PHYS.STEP) {
+                simulationInputs.write(simulationTick, actionMap.sample());
                 Player.step();
                 Entities.step();
                 state.time.acc -= PHYS.STEP;
@@ -1851,7 +1833,8 @@ export function createRuntimeTarget() {
         renderer.resize(window.innerWidth, window.innerHeight, window.devicePixelRatio);
     });
 
-    const api = { World, Editor, Player, Entities, Particles, Sound, Settings, renderer, state, setMode, setTool, setMapSize, restartGame, PHYS, BLOCKS };
+    const api = { World, Editor, Player, Entities, Particles, Sound, Settings, renderer, state, setMode, setTool, setMapSize, restartGame, PHYS, BLOCKS,
+        input: { actions: actionMap, simulation: simulationInputs }, physics: { world: physicsWorld, query: physicsQuery } };
     window.GK = api;
     Object.assign(window, { undo, redo, toggleDebug, toggleSettings, setMode, setTool, setMapSize, zoomCamera,
         clearWorld, saveProjectFile, loadProjectFile, publishGame, startExportedGame, restartGame,
