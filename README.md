@@ -4,8 +4,7 @@ A browser-based voxel game engine and level editor. Build 3D platformer levels,
 playtest them instantly, and publish them as fully standalone HTML files that run
 anywhere — even offline.
 
-**Everything ships in a single `index.html`** (plus vendored libraries), deployed
-automatically to GitHub Pages.
+**`index.html` is now only the browser entry point.** The application is composed from native ES modules in `src/` (plus vendored libraries), with no build step required.
 
 ## Features
 
@@ -47,6 +46,13 @@ automatically to GitHub Pages.
 |---|---|
 | Editor | `WASD` + `Q`/`E` fly, right-drag look, wheel dolly, `B`/`V`/`X` tools, `1`–`0` palette, `Ctrl+Z`/`Y` undo/redo, Alt-click eyedropper |
 | Play | `WASD` move, `SPACE` jump/climb/jetpack, `Shift` sprint/descend, mouse look (click to capture), click shoot, `C` camera toggle |
+
+## Project structure
+
+- `src/core/` — composition root that selects an editor or runtime target.
+- `src/runtime/` — engine implementation plus save/export interfaces.
+- `src/editor/`, `src/render/`, `src/physics/`, `src/assets/`, and `src/ui/` — explicit subsystem boundaries and public interfaces.
+- `index.html` — browser markup and the single `src/main.js` module entry point.
 
 ## Development
 
