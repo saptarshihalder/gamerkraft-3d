@@ -308,6 +308,28 @@
 
     <div id="canvas-container" class="absolute inset-0 z-0 bg-slate-900 cursor-crosshair"></div>
 
+    <script>
+        // Browsers block fetching ES modules from file://, which would leave a
+        // dead UI when this page is double-clicked from disk. Explain instead.
+        // (Module scripts run before DOMContentLoaded, so window.GK is already
+        // set here whenever the engine could boot.)
+        if (location.protocol === 'file:') {
+            window.addEventListener('DOMContentLoaded', function () {
+                if (window.GK) return;
+                var panel = document.createElement('div');
+                panel.style.cssText = 'position:fixed;inset:0;z-index:10000;display:flex;align-items:center;justify-content:center;background:rgba(2,6,23,0.94);font-family:sans-serif;';
+                panel.innerHTML =
+                    '<div style="max-width:34rem;background:#0f172a;border:1px solid #334155;border-radius:12px;padding:2rem;color:#e2e8f0;line-height:1.6;">' +
+                    '<h2 style="font-size:1.25rem;font-weight:800;margin-bottom:0.75rem;color:#fff;">GamerKraft could not start</h2>' +
+                    '<p style="margin-bottom:0.75rem;">This page was opened directly from disk (<code>file://</code>), so the browser blocked its JavaScript modules.</p>' +
+                    '<p style="margin-bottom:0.5rem;">Either serve this folder and open it over HTTP:</p>' +
+                    '<pre style="background:#020617;border:1px solid #334155;border-radius:8px;padding:0.6rem 0.8rem;margin-bottom:0.75rem;color:#93c5fd;">python3 -m http.server 8000</pre>' +
+                    '<p>or use the double-clickable standalone build <code>GamerKraft_Editor.html</code> (produced by <code>npm run build</code> and included in releases).</p>' +
+                    '</div>';
+                document.body.appendChild(panel);
+            });
+        }
+    </script>
     <script type="module" src="src/main.js"></script>
 
 </body>

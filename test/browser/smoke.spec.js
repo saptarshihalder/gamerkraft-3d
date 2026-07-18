@@ -42,6 +42,33 @@ test("publish downloads a standalone playable game", async ({
   expect(errors).toEqual([]);
 });
 
+test("the offline editor boots from file:// and publishes offline", async ({
+  context,
+}, testInfo) => {
+  test.setTimeout(180_000);
+  const editor = await context.newPage();
+  await editor.goto(
+    new URL("../../dist/browser/GamerKraft_Editor.html", import.meta.url).href,
+  );
+  await expect
+    .poll(() => editor.evaluate(() => typeof window.GK))
+    .toBe("object");
+
+  const download = editor.waitForEvent("download", { timeout: 120_000 });
+  await editor.click("#btn-publish");
+  const file = testInfo.outputPath("offline-export.html");
+  await (await download).saveAs(file);
+
+  const game = await context.newPage();
+  await game.goto(pathToFileURL(file).href);
+  await game.click("#start-screen button");
+  await expect
+    .poll(() => game.evaluate(() => window.GK && window.GK.state.mode), {
+      timeout: 30_000,
+    })
+    .toBe("PLAY");
+});
+
 test("saved project files load back into the editor", async ({
   page,
 }, testInfo) => {

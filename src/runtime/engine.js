@@ -6,6 +6,7 @@
     import { BLOCKS, BLOCK_CATALOG_GUID } from '../assets/block-definitions.js';
     import { createDefaultActionMap, SimulationInputBuffer } from '../input/actions.js';
     import { VoxelAabbPhysicsWorld } from '../physics/voxel-aabb-world.js';
+    import { bundleModules, STANDALONE_BOOT } from './module-bundler.js';
     // ============================================================================
     // GamerKraft 3D Engine v2
     //   Core        - renderer, scene, camera, fixed-timestep loop
@@ -1660,98 +1661,55 @@
     }
 
     // -------------------------------------------------------------- Exporter --
-    // Line-anchored so only module-level statements match, never code in
-    // strings or comments. The whole src tree keeps to this statement style.
-    const MODULE_IMPORT_RE = /^[ \t]*import[ \t]+([\s\S]*?)[ \t]*from[ \t]*['"]([^'"]+)['"][ \t]*;?[ \t]*$/gm;
-    const MODULE_REEXPORT_RE = /^[ \t]*export[ \t]*(\{[^}]*\})[ \t]*from[ \t]*['"]([^'"]+)['"][ \t]*;?[ \t]*$/gm;
-    const MODULE_EXPORT_LIST_RE = /^[ \t]*export[ \t]*\{[^}]*\}[ \t]*;?[ \t]*$/gm;
-    const MODULE_EXPORT_DECL_RE = /^([ \t]*)export[ \t]+(?=(?:async[ \t]+)?(?:const|let|var|function|class)\b)/gm;
-
-    /**
-     * Flatten the engine's static import graph into one dependency-ordered
-     * script. Exported games must run from a single HTML file (even file://),
-     * where relative module specifiers have nothing to resolve against.
-     */
-    async function bundleEngineModules(entryHref) {
-        const emitted = new Set();
-        const ordered = [];
-
-        async function visit(href) {
-            if (emitted.has(href)) return;
-            emitted.add(href);
-            const resp = await fetch(href);
-            if (!resp.ok) throw new Error(`HTTP ${resp.status} for ${href}`);
-            const source = await resp.text();
-            if (/^[ \t]*export[ \t]+default\b/m.test(source) || /^[ \t]*import[ \t]+['"]/m.test(source) ||
-                /^[ \t]*export[ \t]+\*/m.test(source)) {
-                throw new Error(`Unsupported module syntax (default export, bare import, or export *) in ${href}`);
-            }
-            const deps = [];
-            for (const re of [MODULE_IMPORT_RE, MODULE_REEXPORT_RE]) {
-                re.lastIndex = 0;
-                for (let m; (m = re.exec(source));) deps.push(new URL(m[m.length - 1], href).href);
-            }
-            for (const dep of deps) await visit(dep);
-
-            // Dependencies are inlined above, so named bindings already
-            // resolve; only `as` renames need a fresh binding.
-            const aliasBindings = (clause, statement) => {
-                const named = /^\{([\s\S]*)\}$/.exec(clause.trim());
-                if (!named) throw new Error(`Unsupported clause in ${href}: ${statement.trim()}`);
-                return named[1].split(',')
-                    .map(part => part.split(/[ \t]+as[ \t]+/).map(t => t.trim()))
-                    .filter(([orig, alias]) => alias && alias !== orig)
-                    .map(([orig, alias]) => `const ${alias} = ${orig};`)
-                    .join(' ');
-            };
-            let flat = source.replace(MODULE_IMPORT_RE, (statement, clause) => aliasBindings(clause, statement));
-            flat = flat.replace(MODULE_REEXPORT_RE, (statement, clause) => aliasBindings(clause, statement));
-            flat = flat.replace(MODULE_EXPORT_LIST_RE, '');
-            flat = flat.replace(MODULE_EXPORT_DECL_RE, '$1');
-            ordered.push(`// ---- bundled module: ${new URL(href).pathname} ----\n${flat}`);
-        }
-
-        await visit(entryHref);
-        return ordered.join('\n');
-    }
-
     async function publishGame() {
         UI.notify('Building standalone game file...', 'info');
         let html = INITIAL_HTML;
 
-        // Inline vendored libraries so the exported file is fully self-contained.
-        const vendors = ['vendor/tailwind.js', 'vendor/lucide.min.js', 'vendor/three.min.js'];
-        const cdnFallbacks = {
-            'vendor/tailwind.js': 'https://cdn.tailwindcss.com',
-            'vendor/lucide.min.js': 'https://unpkg.com/lucide@0.454.0/dist/umd/lucide.min.js',
-            'vendor/three.min.js': 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js'
-        };
-        for (const src of vendors) {
-            const tag = `<script src="${src}"><\/script>`;
-            try {
-                const resp = await fetch(src);
-                if (!resp.ok) throw new Error(resp.status);
-                let js = await resp.text();
-                js = js.replace(/<\/script/gi, '<\\/script');
-                // function replacer: library code contains $-sequences that are
-                // special in string replacements and would corrupt the output
-                html = html.replace(tag, () => `<script>${js}<\/script>`);
-            } catch (e) {
-                // Offline / file:// fallback: point at the CDN instead
-                html = html.replace(tag, () => `<script src="${cdnFallbacks[src]}"><\/script>`);
-            }
-        }
-
-        // The engine and every module it imports are embedded as one flattened
-        // script, so downloaded games remain standalone.
+        // In a standalone build (offline editor) the vendors and the flattened
+        // engine are already inline, so the page only needs the world injected.
         const appTag = '<script type="module" src="src/main.js"><\/script>';
-        try {
-            const entry = new URL('src/runtime/engine.js', document.baseURI).href;
-            const bundle = (await bundleEngineModules(entry)).replace(/<\/script/gi, '<\\/script');
-            html = html.replace(appTag, () => `<script type="module">${bundle}\ncreateRuntimeTarget();<\/script>`);
-        } catch (e) {
-            UI.notify('Could not embed the runtime modules; publish from a web server.', 'error');
-            return;
+        if (html.includes(appTag)) {
+            // Inline vendored libraries so the exported file is fully self-contained.
+            const vendors = ['vendor/tailwind.js', 'vendor/lucide.min.js', 'vendor/three.min.js'];
+            const cdnFallbacks = {
+                'vendor/tailwind.js': 'https://cdn.tailwindcss.com',
+                'vendor/lucide.min.js': 'https://unpkg.com/lucide@0.454.0/dist/umd/lucide.min.js',
+                'vendor/three.min.js': 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js'
+            };
+            for (const src of vendors) {
+                const tag = `<script src="${src}"><\/script>`;
+                try {
+                    const resp = await fetch(src);
+                    if (!resp.ok) throw new Error(resp.status);
+                    let js = await resp.text();
+                    js = js.replace(/<\/script/gi, '<\\/script');
+                    // function replacer: library code contains $-sequences that are
+                    // special in string replacements and would corrupt the output
+                    html = html.replace(tag, () => `<script>${js}<\/script>`);
+                } catch (e) {
+                    // Missing vendor file fallback: point at the CDN instead
+                    html = html.replace(tag, () => `<script src="${cdnFallbacks[src]}"><\/script>`);
+                }
+            }
+
+            // The engine and every module it imports are embedded as one
+            // flattened script, so downloaded games remain standalone.
+            try {
+                const entry = new URL('src/runtime/engine.js', document.baseURI).href;
+                const bundle = (await bundleModules(entry, {
+                    load: async href => {
+                        const resp = await fetch(href);
+                        if (!resp.ok) throw new Error(`HTTP ${resp.status} for ${href}`);
+                        return resp.text();
+                    },
+                    resolve: (spec, from) => new URL(spec, from).href,
+                    label: href => new URL(href).pathname
+                })).replace(/<\/script/gi, '<\\/script');
+                html = html.replace(appTag, () => `<script type="module">${bundle}\n${STANDALONE_BOOT}<\/script>`);
+            } catch (e) {
+                UI.notify('Could not embed the runtime modules; publish from a web server.', 'error');
+                return;
+            }
         }
 
         const world = JSON.stringify(World.serialize()).replace(/</g, '\\u003c');
