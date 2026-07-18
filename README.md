@@ -88,3 +88,13 @@ GK.state.player.pos              // live player position
 ## Deployment
 
 Pushes to `main` deploy to GitHub Pages via `.github/workflows/static.yml`.
+
+### Rendering architecture
+
+`src/render/` owns the graphics-device boundary. Runtime code advances a frame
+with `beginFrame()`, `submitScene()`, and `endFrame()` and reads draw statistics
+through `getDiagnostics()`. The current `ThreeWebGLRenderer` maps the ordered
+shadow, opaque, transparent, post-process, and UI pass contract to Three.js's
+WebGL scheduler. Texture, mesh, material, and shader resources are represented
+by opaque `AssetHandle`s. WebGPU, Vulkan, and desktop-native renderers remain
+future backend implementations of the same `Renderer` interface.
