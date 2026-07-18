@@ -1,0 +1,7 @@
+{
+  "format": "gamerkraft.block-catalog",
+  "version": 1,
+  "guid": "e3e2c252-d6a6-488b-966c-5ea51e6d0d01",
+  "runtimeModule": "../../src/assets/block-definitions.js",
+  "description": "Block behavior definitions consumed by the browser runtime."
+}
