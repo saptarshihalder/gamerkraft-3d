@@ -8,6 +8,9 @@ All notable changes to GamerKraft 3D are documented here. The format follows [Ke
 
 - Collaboration documentation, repository templates, release process, and automated quality/deployment workflows.
 - Browser smoke tests covering the publish pipeline (standalone export opened from `file://`) and project save/load round trips.
+- `npm run build` now also produces `dist/browser/GamerKraft_Editor.html`, a double-clickable single-file editor with the vendors and flattened engine inlined. It boots and publishes games entirely offline; publishing from it skips refetching and reuses its own inline bundle.
+- Opening `index.html` directly from disk now shows an explanation (browsers block ES modules on `file://`) instead of a dead UI whose buttons silently do nothing.
+- The module flattener is a shared, DOM-free module (`src/runtime/module-bundler.js`) used by both the in-browser publisher and the build tool, with unit tests over the real engine graph.
 
 ### Fixed
 
