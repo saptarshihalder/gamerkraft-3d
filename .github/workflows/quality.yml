@@ -45,6 +45,7 @@ jobs:
       - run: npm run build
       - run: test -f dist/browser/index.html
       - run: test -f dist/browser/asset-manifest.json
+      - run: test -f dist/browser/GamerKraft_Editor.html
       - uses: actions/upload-artifact@v4
         with:
           name: site
