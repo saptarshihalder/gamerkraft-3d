@@ -7,6 +7,9 @@
     import { createDefaultActionMap, SimulationInputBuffer } from '../input/actions.js';
     import { VoxelAabbPhysicsWorld } from '../physics/voxel-aabb-world.js';
     import { bundleModules, STANDALONE_BOOT } from './module-bundler.js';
+    import { createLog, LogLevel } from '../core/log.js';
+    import { createRng, toSeed } from '../core/random.js';
+    import { generateTerrain } from '../world/terrain-generator.js';
     // ============================================================================
     // GamerKraft 3D Engine v2
     //   Core        - renderer, scene, camera, fixed-timestep loop
@@ -24,6 +27,10 @@
     // Captured before any DOM mutation so Publish exports pristine markup.
     const INITIAL_HTML = '<!DOCTYPE html>\n' + document.documentElement.outerHTML;
     const IS_EXPORTED = !!window.EXPORTED_WORLD;
+
+    // Structured engine log: systems write here; the developer console,
+    // tests, and future telemetry subscribe to the same stream.
+    const Log = createLog({ capacity: 500 });
 
     // ---------------------------------------------------------------- Blocks --
     // Block behavior is authored in src/assets/block-definitions.js.
@@ -1167,6 +1174,7 @@
             state.player.respawn = null;
         }
         state.mode = mode;
+        Log.info('engine', `mode -> ${mode}`);
 
         const editBtn = document.getElementById('modeEdit');
         const playBtn = document.getElementById('modePlay');
@@ -1247,6 +1255,153 @@
         Editor.reset();
         World.dirty = false;
     }
+
+    /**
+     * Replace the world with deterministic procedural terrain as one undoable
+     * action. Same seed, same map size — same world, on any machine.
+     */
+    function generateWorld(seedInput) {
+        if (state.mode !== 'EDIT') { UI.notify('Switch to EDITOR to generate a world', 'error'); return null; }
+        const seed = (seedInput === undefined || seedInput === null || seedInput === '')
+            ? ((Math.random() * 0xffffffff) >>> 0)
+            : toSeed(seedInput);
+        const result = generateTerrain({ mapSize: World.mapSize, seed });
+        Editor.begin();
+        World.clear();
+        for (const [key, id] of Object.entries(result.voxels)) {
+            const [x, y, z] = key.split(',').map(Number);
+            World.setBlock(x, y, z, id);
+        }
+        Editor.commit();
+        Log.info('world', `generated terrain seed=${seed} voxels=${Object.keys(result.voxels).length}`);
+        UI.notify(`World generated (seed ${seed}) — Ctrl+Z to undo`, 'success');
+        return seed;
+    }
+
+    // ------------------------------------------------------ Developer console --
+    // Runtime command console (` to toggle). Works in the editor and in
+    // exported games; world-altering commands stay editor-only.
+    const DevConsole = {
+        commands: new Map(),
+        history: [], historyIndex: 0,
+        el: null, out: null, input: null,
+        init() {
+            this.el = document.getElementById('dev-console');
+            this.out = document.getElementById('console-out');
+            this.input = document.getElementById('console-input');
+            this.input.addEventListener('keydown', e => {
+                e.stopPropagation();
+                if (e.code === 'Enter') {
+                    const line = this.input.value.trim();
+                    this.input.value = '';
+                    if (line) this.exec(line);
+                } else if (e.code === 'Backquote' || e.code === 'Escape') {
+                    e.preventDefault();
+                    this.toggle();
+                } else if (e.code === 'ArrowUp') {
+                    e.preventDefault();
+                    if (this.historyIndex > 0) this.input.value = this.history[--this.historyIndex];
+                } else if (e.code === 'ArrowDown') {
+                    e.preventDefault();
+                    this.input.value = this.historyIndex < this.history.length - 1 ? this.history[++this.historyIndex] : '';
+                    if (this.historyIndex >= this.history.length - 1) this.historyIndex = this.history.length;
+                }
+            });
+            // Surface engine warnings and errors even when the console is closed
+            // later: entries persist in Log and print once opened.
+            Log.onEntry(entry => {
+                if (entry.level >= LogLevel.Warn && this.out) {
+                    this.print(`${entry.levelName} [${entry.category}] ${entry.message}`,
+                        entry.level === LogLevel.Error ? 'text-red-400' : 'text-yellow-400');
+                }
+            });
+        },
+        toggle() {
+            const open = !this.el.classList.toggle('hidden');
+            if (open) {
+                if (state.mode === 'PLAY' && document.exitPointerLock) document.exitPointerLock();
+                this.input.focus();
+            } else {
+                this.input.blur();
+            }
+        },
+        print(text, cls = 'text-slate-300') {
+            const line = document.createElement('div');
+            line.className = cls;
+            line.textContent = text;
+            this.out.appendChild(line);
+            while (this.out.children.length > 200) this.out.removeChild(this.out.firstChild);
+            this.out.scrollTop = this.out.scrollHeight;
+        },
+        register(name, help, run) { this.commands.set(name, { name, help, run }); },
+        exec(line) {
+            this.history.push(line);
+            this.historyIndex = this.history.length;
+            this.print('> ' + line, 'text-green-400');
+            const [name, ...args] = line.split(/\s+/);
+            const command = this.commands.get(name.toLowerCase());
+            if (!command) { this.print(`Unknown command "${name}" — try help`, 'text-red-400'); return; }
+            try {
+                const output = command.run(args);
+                if (output) String(output).split('\n').forEach(l => this.print(l));
+            } catch (e) {
+                this.print('Error: ' + e.message, 'text-red-400');
+                Log.error('console', `${name}: ${e.message}`);
+            }
+        }
+    };
+
+    DevConsole.register('help', 'List available commands', () =>
+        [...DevConsole.commands.values()].map(c => `${c.name} — ${c.help}`).sort().join('\n'));
+    DevConsole.register('clear', 'Clear console output', () => { DevConsole.out.innerHTML = ''; });
+    DevConsole.register('stats', 'Engine statistics', () => {
+        const d = renderer.getDiagnostics();
+        return `mode=${state.mode} voxels=${Object.keys(World.voxels).length} items=${World.items.length} ` +
+            `entities=${state.entities.length} drawCalls=${d.drawCalls} tris=${d.triangles} fps=${state.time.fps}`;
+    });
+    DevConsole.register('log', 'Show recent log entries: log [count]', args =>
+        Log.tail(parseInt(args[0], 10) || 15).map(e => `${e.levelName} [${e.category}] ${e.message}`).join('\n') || 'log is empty');
+    DevConsole.register('loglevel', 'Set minimum log level: loglevel debug|info|warn|error', args => {
+        const level = LogLevel[String(args[0] || '').replace(/^./, c => c.toUpperCase())];
+        if (level === undefined) return 'Usage: loglevel debug|info|warn|error';
+        Log.setLevel(level);
+        return `log level set to ${args[0]}`;
+    });
+    DevConsole.register('generate', 'Generate a procedural world: generate [seed]', args => {
+        if (IS_EXPORTED) return 'Not available in exported games';
+        const seed = generateWorld(args.join(' '));
+        return seed === null ? 'Switch to EDITOR first' : `generated world with seed ${seed}`;
+    });
+    DevConsole.register('mapsize', 'Resize the map: mapsize <10-200>', args => {
+        if (IS_EXPORTED) return 'Not available in exported games';
+        setMapSize(args[0]);
+        return `map size is now ${World.mapSize}`;
+    });
+    DevConsole.register('mode', 'Switch mode: mode edit|play', args => {
+        if (IS_EXPORTED) return 'Not available in exported games';
+        const mode = String(args[0] || '').toUpperCase();
+        if (mode !== 'EDIT' && mode !== 'PLAY') return 'Usage: mode edit|play';
+        setMode(mode);
+        return `mode=${mode}`;
+    });
+    DevConsole.register('tp', 'Teleport the player: tp <x> <y> <z>', args => {
+        if (state.mode !== 'PLAY') return 'tp works in PLAY mode';
+        const [x, y, z] = args.map(Number);
+        if ([x, y, z].some(Number.isNaN)) return 'Usage: tp <x> <y> <z>';
+        state.player.pos.set(x, y, z);
+        state.player.vel.set(0, 0, 0);
+        return `teleported to (${x}, ${y}, ${z})`;
+    });
+    DevConsole.register('heal', 'Restore all hearts', () => {
+        state.player.hearts = 3;
+        UI.setHearts(3);
+        return 'hearts restored';
+    });
+    DevConsole.register('give', 'Grant a pickup: give jetpack', args => {
+        if (String(args[0] || '').toLowerCase() !== 'jetpack') return 'Usage: give jetpack';
+        state.player.hasJetpack = true;
+        return 'jetpack granted — hold SPACE to fly';
+    });
 
     function setMapSize(val, opts = {}) {
         val = parseInt(val, 10);
@@ -1345,6 +1500,7 @@
         if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
         Sound.ensure();
 
+        if (e.code === 'Backquote') { e.preventDefault(); DevConsole.toggle(); return; }
         if (e.ctrlKey && e.code === 'KeyZ') { e.preventDefault(); if (state.mode === 'EDIT') Editor.undo(); return; }
         if (e.ctrlKey && e.code === 'KeyY') { e.preventDefault(); if (state.mode === 'EDIT') Editor.redo(); return; }
         if (e.code === 'Space') e.preventDefault();
@@ -1644,6 +1800,7 @@
                 World.deserialize(data);
                 UI.notify('World loaded successfully', 'success');
             } catch (err) {
+                Log.warn('save', `project load rejected: ${err.message}`);
                 UI.notify('Error loading file: not a valid world', 'error');
             }
             input.value = '';
@@ -1707,10 +1864,12 @@
                 })).replace(/<\/script/gi, '<\\/script');
                 html = html.replace(appTag, () => `<script type="module">${bundle}\n${STANDALONE_BOOT}<\/script>`);
             } catch (e) {
+                Log.error('export', `module bundling failed: ${e.message}`);
                 UI.notify('Could not embed the runtime modules; publish from a web server.', 'error');
                 return;
             }
         }
+        Log.info('export', 'published standalone game file');
 
         const world = JSON.stringify(World.serialize()).replace(/</g, '\\u003c');
         html = html.replace(
@@ -1810,6 +1969,7 @@ export function createRuntimeTarget() {
     if (applicationStarted) return window.GK;
     applicationStarted = true;
     UI.init();
+    DevConsole.init();
     Settings.load();
     Particles.init();
     updateGrid();
@@ -1849,10 +2009,11 @@ export function createRuntimeTarget() {
     });
 
     const api = { World, Editor, Player, Entities, Particles, Sound, Settings, renderer, state, setMode, setTool, setMapSize, restartGame, PHYS, BLOCKS,
+        Log, Console: DevConsole, generateWorld, Random: { createRng, toSeed },
         input: { actions: actionMap, simulation: simulationInputs }, physics: { world: physicsWorld, query: physicsQuery } };
     window.GK = api;
     Object.assign(window, { undo, redo, toggleDebug, toggleSettings, setMode, setTool, setMapSize, zoomCamera,
-        clearWorld, saveProjectFile, loadProjectFile, publishGame, startExportedGame, restartGame,
+        clearWorld, generateWorld, saveProjectFile, loadProjectFile, publishGame, startExportedGame, restartGame,
         startTutorial, skipTutorial, nextTutorialStep });
     mainLoop();
     return api;

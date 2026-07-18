@@ -69,6 +69,45 @@ test("the offline editor boots from file:// and publishes offline", async ({
     .toBe("PLAY");
 });
 
+test("the developer console generates deterministic playable terrain", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await expect.poll(() => page.evaluate(() => typeof window.GK)).toBe("object");
+
+  await page.keyboard.press("Backquote");
+  await expect(page.locator("#dev-console")).toBeVisible();
+  await page.fill("#console-input", "generate 42");
+  await page.press("#console-input", "Enter");
+
+  const world = () =>
+    page.evaluate(() => {
+      const ids = Object.values(window.GK.World.voxels);
+      return {
+        count: ids.length,
+        starts: ids.filter((id) => id === 10).length,
+        goals: ids.filter((id) => id === 11).length,
+      };
+    });
+  await expect.poll(async () => (await world()).goals).toBe(1);
+  const first = await world();
+  expect(first.starts).toBe(1);
+
+  // Same seed regenerates the identical world.
+  await page.fill("#console-input", "generate 42");
+  await page.press("#console-input", "Enter");
+  await expect.poll(async () => (await world()).count).toBe(first.count);
+
+  // The generated world is immediately playable.
+  await page.fill("#console-input", "mode play");
+  await page.press("#console-input", "Enter");
+  await expect
+    .poll(() => page.evaluate(() => window.GK.state.player.onGround), {
+      timeout: 15_000,
+    })
+    .toBe(true);
+});
+
 test("saved project files load back into the editor", async ({
   page,
 }, testInfo) => {
