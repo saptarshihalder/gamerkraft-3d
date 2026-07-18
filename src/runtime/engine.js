@@ -1,4 +1,5 @@
 'use strict';
+    import { createThreeWebGLRenderer } from '../render/index.js';
     // ============================================================================
     // GamerKraft 3D Engine v2
     //   Core        - renderer, scene, camera, fixed-timestep loop
@@ -100,12 +101,8 @@
     scene.fog = new THREE.Fog(COLORS.editBg, 40, 180);
 
     const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    container.appendChild(renderer.domElement);
+    // Rendering is isolated behind the backend-neutral renderer contract.
+    const renderer = createThreeWebGLRenderer({ container });
 
     const hemiLight = new THREE.HemisphereLight(0xdfefff, 0x50483a, 0.65);
     scene.add(hemiLight);
@@ -1380,7 +1377,7 @@
 
     document.addEventListener('mousedown', e => {
         Sound.ensure();
-        if (e.target !== renderer.domElement) return;
+        if (e.target !== renderer.canvas) return;
 
         if (e.button === 2) { state.mouse.rightDown = true; return; }
         if (e.button === 1) { // middle click: eyedropper
@@ -1391,8 +1388,8 @@
         if (e.button !== 0) return;
 
         if (state.mode === 'PLAY') {
-            if (document.pointerLockElement !== renderer.domElement) {
-                renderer.domElement.requestPointerLock && renderer.domElement.requestPointerLock();
+            if (document.pointerLockElement !== renderer.canvas) {
+                renderer.canvas.requestPointerLock && renderer.canvas.requestPointerLock();
             } else {
                 Player.shoot();
             }
@@ -1436,7 +1433,7 @@
     document.addEventListener('mousemove', e => {
         // Play mode: pointer-lock look
         if (state.mode === 'PLAY') {
-            if (document.pointerLockElement === renderer.domElement) {
+            if (document.pointerLockElement === renderer.canvas) {
                 state.player.rot.y -= e.movementX * 0.0025;
                 state.player.rot.x -= e.movementY * 0.0025;
                 state.player.rot.x = Math.max(-1.5, Math.min(1.5, state.player.rot.x));
@@ -1550,7 +1547,7 @@
 
     function updateDebug() {
         const p = state.player;
-        const info = renderer.info.render;
+        const info = renderer.getDiagnostics();
         UI.el['debug-content'].innerHTML = `
             MODE: ${state.mode} | TOOL: ${state.tool}<br>
             POS: (${p.pos.x.toFixed(1)}, ${p.pos.y.toFixed(1)}, ${p.pos.z.toFixed(1)})<br>
@@ -1559,7 +1556,7 @@
             HEARTS: ${p.hearts} | JETPACK: ${p.hasJetpack}<br>
             VOXELS: ${Object.keys(World.voxels).length} | ITEMS: ${World.items.length}<br>
             ENTITIES: ${state.entities.length} | PARTICLES: ${Particles.list.length}<br>
-            DRAW CALLS: ${info.calls} | TRIS: ${info.triangles}<br>
+            DRAW CALLS: ${info.drawCalls} | TRIS: ${info.triangles}<br>
             FPS: ${state.time.fps}
         `;
     }
@@ -1621,7 +1618,9 @@
         const deg = THREE.MathUtils.radToDeg(Math.atan2(dir.x, dir.z));
         UI.el['compass-face'].style.transform = `rotate(${deg - 180}deg)`;
 
-        renderer.render(scene, camera);
+        renderer.beginFrame();
+        renderer.submitScene(scene, camera);
+        renderer.endFrame();
     }
 
     // ------------------------------------------------------------ SaveSystem --
@@ -1836,10 +1835,10 @@ export function createRuntimeTarget() {
     window.addEventListener('resize', () => {
         camera.aspect = window.innerWidth / window.innerHeight;
         camera.updateProjectionMatrix();
-        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.resize(window.innerWidth, window.innerHeight, window.devicePixelRatio);
     });
 
-    const api = { World, Editor, Player, Entities, Particles, Sound, Settings, state, setMode, setTool, setMapSize, restartGame, PHYS, BLOCKS };
+    const api = { World, Editor, Player, Entities, Particles, Sound, Settings, renderer, state, setMode, setTool, setMapSize, restartGame, PHYS, BLOCKS };
     window.GK = api;
     Object.assign(window, { undo, redo, toggleDebug, toggleSettings, setMode, setTool, setMapSize, zoomCamera,
         clearWorld, saveProjectFile, loadProjectFile, publishGame, startExportedGame, restartGame,
