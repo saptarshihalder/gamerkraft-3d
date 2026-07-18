@@ -36,6 +36,7 @@ anywhere — even offline.
   are individual meshes with shared geometries/materials — nothing is ever
   re-allocated or disposed per block.
 - **Fixed-timestep simulation** with an accumulator; rendering interpolates the camera.
+- **Semantic simulation boundaries** — action maps (`Move`, `Jump`, `Interact`), tick-indexed replay inputs, physics queries, audio sources/mixers, and authority-aware replication contracts are backend independent. The current voxel AABB backend remains the default implementation.
 - **Settings panel** — shadows, particles, volume, FOV, view distance, camera mode; persisted to `localStorage`.
 - **Publisher** — inlines the vendored libraries and the serialized world into one
   self-contained HTML file (with CDN fallback when building from `file://`).
