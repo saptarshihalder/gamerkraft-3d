@@ -1637,7 +1637,9 @@
         reader.onload = e => {
             try {
                 const data = JSON.parse(e.target.result);
-                if (!data.voxels || typeof data.voxels !== 'object') throw new Error('no voxels');
+                // Validate before deserialize: a bad file must not clear the
+                // current world. Accepts v3 scenes and legacy voxel payloads.
+                if (!terrainEntity(importScene(data))) throw new Error('no terrain');
                 World.deserialize(data);
                 UI.notify('World loaded successfully', 'success');
             } catch (err) {
@@ -1658,6 +1660,61 @@
     }
 
     // -------------------------------------------------------------- Exporter --
+    // Line-anchored so only module-level statements match, never code in
+    // strings or comments. The whole src tree keeps to this statement style.
+    const MODULE_IMPORT_RE = /^[ \t]*import[ \t]+([\s\S]*?)[ \t]*from[ \t]*['"]([^'"]+)['"][ \t]*;?[ \t]*$/gm;
+    const MODULE_REEXPORT_RE = /^[ \t]*export[ \t]*(\{[^}]*\})[ \t]*from[ \t]*['"]([^'"]+)['"][ \t]*;?[ \t]*$/gm;
+    const MODULE_EXPORT_LIST_RE = /^[ \t]*export[ \t]*\{[^}]*\}[ \t]*;?[ \t]*$/gm;
+    const MODULE_EXPORT_DECL_RE = /^([ \t]*)export[ \t]+(?=(?:async[ \t]+)?(?:const|let|var|function|class)\b)/gm;
+
+    /**
+     * Flatten the engine's static import graph into one dependency-ordered
+     * script. Exported games must run from a single HTML file (even file://),
+     * where relative module specifiers have nothing to resolve against.
+     */
+    async function bundleEngineModules(entryHref) {
+        const emitted = new Set();
+        const ordered = [];
+
+        async function visit(href) {
+            if (emitted.has(href)) return;
+            emitted.add(href);
+            const resp = await fetch(href);
+            if (!resp.ok) throw new Error(`HTTP ${resp.status} for ${href}`);
+            const source = await resp.text();
+            if (/^[ \t]*export[ \t]+default\b/m.test(source) || /^[ \t]*import[ \t]+['"]/m.test(source) ||
+                /^[ \t]*export[ \t]+\*/m.test(source)) {
+                throw new Error(`Unsupported module syntax (default export, bare import, or export *) in ${href}`);
+            }
+            const deps = [];
+            for (const re of [MODULE_IMPORT_RE, MODULE_REEXPORT_RE]) {
+                re.lastIndex = 0;
+                for (let m; (m = re.exec(source));) deps.push(new URL(m[m.length - 1], href).href);
+            }
+            for (const dep of deps) await visit(dep);
+
+            // Dependencies are inlined above, so named bindings already
+            // resolve; only `as` renames need a fresh binding.
+            const aliasBindings = (clause, statement) => {
+                const named = /^\{([\s\S]*)\}$/.exec(clause.trim());
+                if (!named) throw new Error(`Unsupported clause in ${href}: ${statement.trim()}`);
+                return named[1].split(',')
+                    .map(part => part.split(/[ \t]+as[ \t]+/).map(t => t.trim()))
+                    .filter(([orig, alias]) => alias && alias !== orig)
+                    .map(([orig, alias]) => `const ${alias} = ${orig};`)
+                    .join(' ');
+            };
+            let flat = source.replace(MODULE_IMPORT_RE, (statement, clause) => aliasBindings(clause, statement));
+            flat = flat.replace(MODULE_REEXPORT_RE, (statement, clause) => aliasBindings(clause, statement));
+            flat = flat.replace(MODULE_EXPORT_LIST_RE, '');
+            flat = flat.replace(MODULE_EXPORT_DECL_RE, '$1');
+            ordered.push(`// ---- bundled module: ${new URL(href).pathname} ----\n${flat}`);
+        }
+
+        await visit(entryHref);
+        return ordered.join('\n');
+    }
+
     async function publishGame() {
         UI.notify('Building standalone game file...', 'info');
         let html = INITIAL_HTML;
@@ -1685,15 +1742,15 @@
             }
         }
 
-        // The module source is embedded as well, so downloaded games remain standalone.
+        // The engine and every module it imports are embedded as one flattened
+        // script, so downloaded games remain standalone.
         const appTag = '<script type="module" src="src/main.js"><\/script>';
         try {
-            const response = await fetch('src/runtime/engine.js');
-            if (!response.ok) throw new Error(response.status);
-            const engineSource = (await response.text()).replace(/<\/script/gi, '<\\/script');
-            html = html.replace(appTag, () => `<script type="module">${engineSource}\ncreateRuntimeTarget();<\/script>`);
+            const entry = new URL('src/runtime/engine.js', document.baseURI).href;
+            const bundle = (await bundleEngineModules(entry)).replace(/<\/script/gi, '<\\/script');
+            html = html.replace(appTag, () => `<script type="module">${bundle}\ncreateRuntimeTarget();<\/script>`);
         } catch (e) {
-            UI.notify('Could not embed the runtime module; publish from a web server.', 'error');
+            UI.notify('Could not embed the runtime modules; publish from a web server.', 'error');
             return;
         }
 
