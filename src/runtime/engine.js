@@ -6,6 +6,7 @@
     import { BLOCKS, BLOCK_CATALOG_GUID } from '../assets/block-definitions.js';
     import { createDefaultActionMap, SimulationInputBuffer } from '../input/actions.js';
     import { VoxelAabbPhysicsWorld } from '../physics/voxel-aabb-world.js';
+    import { bundleModules, STANDALONE_BOOT } from './module-bundler.js';
     // ============================================================================
     // GamerKraft 3D Engine v2
     //   Core        - renderer, scene, camera, fixed-timestep loop
@@ -1637,7 +1638,9 @@
         reader.onload = e => {
             try {
                 const data = JSON.parse(e.target.result);
-                if (!data.voxels || typeof data.voxels !== 'object') throw new Error('no voxels');
+                // Validate before deserialize: a bad file must not clear the
+                // current world. Accepts v3 scenes and legacy voxel payloads.
+                if (!terrainEntity(importScene(data))) throw new Error('no terrain');
                 World.deserialize(data);
                 UI.notify('World loaded successfully', 'success');
             } catch (err) {
@@ -1662,39 +1665,51 @@
         UI.notify('Building standalone game file...', 'info');
         let html = INITIAL_HTML;
 
-        // Inline vendored libraries so the exported file is fully self-contained.
-        const vendors = ['vendor/tailwind.js', 'vendor/lucide.min.js', 'vendor/three.min.js'];
-        const cdnFallbacks = {
-            'vendor/tailwind.js': 'https://cdn.tailwindcss.com',
-            'vendor/lucide.min.js': 'https://unpkg.com/lucide@0.454.0/dist/umd/lucide.min.js',
-            'vendor/three.min.js': 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js'
-        };
-        for (const src of vendors) {
-            const tag = `<script src="${src}"><\/script>`;
-            try {
-                const resp = await fetch(src);
-                if (!resp.ok) throw new Error(resp.status);
-                let js = await resp.text();
-                js = js.replace(/<\/script/gi, '<\\/script');
-                // function replacer: library code contains $-sequences that are
-                // special in string replacements and would corrupt the output
-                html = html.replace(tag, () => `<script>${js}<\/script>`);
-            } catch (e) {
-                // Offline / file:// fallback: point at the CDN instead
-                html = html.replace(tag, () => `<script src="${cdnFallbacks[src]}"><\/script>`);
-            }
-        }
-
-        // The module source is embedded as well, so downloaded games remain standalone.
+        // In a standalone build (offline editor) the vendors and the flattened
+        // engine are already inline, so the page only needs the world injected.
         const appTag = '<script type="module" src="src/main.js"><\/script>';
-        try {
-            const response = await fetch('src/runtime/engine.js');
-            if (!response.ok) throw new Error(response.status);
-            const engineSource = (await response.text()).replace(/<\/script/gi, '<\\/script');
-            html = html.replace(appTag, () => `<script type="module">${engineSource}\ncreateRuntimeTarget();<\/script>`);
-        } catch (e) {
-            UI.notify('Could not embed the runtime module; publish from a web server.', 'error');
-            return;
+        if (html.includes(appTag)) {
+            // Inline vendored libraries so the exported file is fully self-contained.
+            const vendors = ['vendor/tailwind.js', 'vendor/lucide.min.js', 'vendor/three.min.js'];
+            const cdnFallbacks = {
+                'vendor/tailwind.js': 'https://cdn.tailwindcss.com',
+                'vendor/lucide.min.js': 'https://unpkg.com/lucide@0.454.0/dist/umd/lucide.min.js',
+                'vendor/three.min.js': 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js'
+            };
+            for (const src of vendors) {
+                const tag = `<script src="${src}"><\/script>`;
+                try {
+                    const resp = await fetch(src);
+                    if (!resp.ok) throw new Error(resp.status);
+                    let js = await resp.text();
+                    js = js.replace(/<\/script/gi, '<\\/script');
+                    // function replacer: library code contains $-sequences that are
+                    // special in string replacements and would corrupt the output
+                    html = html.replace(tag, () => `<script>${js}<\/script>`);
+                } catch (e) {
+                    // Missing vendor file fallback: point at the CDN instead
+                    html = html.replace(tag, () => `<script src="${cdnFallbacks[src]}"><\/script>`);
+                }
+            }
+
+            // The engine and every module it imports are embedded as one
+            // flattened script, so downloaded games remain standalone.
+            try {
+                const entry = new URL('src/runtime/engine.js', document.baseURI).href;
+                const bundle = (await bundleModules(entry, {
+                    load: async href => {
+                        const resp = await fetch(href);
+                        if (!resp.ok) throw new Error(`HTTP ${resp.status} for ${href}`);
+                        return resp.text();
+                    },
+                    resolve: (spec, from) => new URL(spec, from).href,
+                    label: href => new URL(href).pathname
+                })).replace(/<\/script/gi, '<\\/script');
+                html = html.replace(appTag, () => `<script type="module">${bundle}\n${STANDALONE_BOOT}<\/script>`);
+            } catch (e) {
+                UI.notify('Could not embed the runtime modules; publish from a web server.', 'error');
+                return;
+            }
         }
 
         const world = JSON.stringify(World.serialize()).replace(/</g, '\\u003c');
