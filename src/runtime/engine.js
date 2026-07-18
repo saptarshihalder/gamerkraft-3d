@@ -1,5 +1,8 @@
 'use strict';
     import { createThreeWebGLRenderer } from '../render/index.js';
+    import { Scene, createTerrainComponent } from '../world/scene.js';
+    import { importScene, terrainEntity } from '../world/scene-importer.js';
+    import { RepresentationSystems } from '../world/systems.js';
     // ============================================================================
     // GamerKraft 3D Engine v2
     //   Core        - renderer, scene, camera, fixed-timestep loop
@@ -365,6 +368,11 @@
         itemByKey: {},
         group: new THREE.Group(),
         dirty: false,
+        // Scene data is authoritative. `render`, pools, and items below are
+        // runtime-only caches and are never included in a scene document.
+        scene: null,
+        terrain: null,
+        representationSystems: null,
 
         half() { return Math.floor(this.mapSize / 2); },
         inBounds(x, y, z) {
@@ -480,7 +488,9 @@
         setBlock(x, y, z, id, opts = {}) {
             if (!opts.force && !this.inBounds(x, y, z)) return false;
             const key = `${x},${y},${z}`;
-            if (this.voxels[key] === id) return false;
+            // During scene hydration the component already contains the voxel;
+            // absence from `render` means its runtime representation is still due.
+            if (this.voxels[key] === id && this.render[key]) return false;
             const def = BLOCK_MAP.get(id);
             if (!def) return false;
             if (!opts.silent) Editor.noteChange(key, this.voxels[key] || null);
@@ -552,20 +562,43 @@
         },
 
         serialize() {
-            return { version: 2, mapSize: this.mapSize, voxels: this.voxels };
+            return this.scene.toJSON();
         },
         deserialize(data) {
             this.clear({ silent: true });
-            if (data.mapSize) setMapSize(data.mapSize, { silent: true });
-            const voxels = data.voxels || {};
-            for (const key of Object.keys(voxels)) {
-                const [x, y, z] = key.split(',').map(Number);
-                this.setBlock(x, y, z, voxels[key], { silent: true });
-            }
+            this.scene = importScene(data);
+            const terrainEntityRecord = terrainEntity(this.scene);
+            if (!terrainEntityRecord) throw new Error('A GamerKraft scene must contain a Terrain component.');
+            this.terrain = terrainEntityRecord.components.Terrain;
+            this.mapSize = this.terrain.mapSize;
+            // Let the rendering system materialize serialized terrain into its
+            // transient render/physics/audio representations.
+            this.voxels = this.terrain.voxels;
+            this.representationSystems.rebuild(this.scene);
+            updateGrid();
             Editor.reset();
             this.dirty = false;
         }
     };
+    {
+        const scene = new Scene();
+        const catalog = scene.assets.add({ type: 'block-catalog', uri: 'gamerkraft://assets/blocks', label: 'Built-in block catalogue' });
+        const terrain = scene.addEntity({ name: 'Terrain', components: { Terrain: createTerrainComponent({ blockCatalogAssetId: catalog.id }) } });
+        World.scene = scene;
+        World.terrain = terrain.components.Terrain;
+        World.voxels = World.terrain.voxels;
+        World.representationSystems = new RepresentationSystems({
+            renderTerrain: (_entity, component) => {
+                for (const [key, id] of Object.entries(component.voxels)) {
+                    const [x, y, z] = key.split(',').map(Number);
+                    World.setBlock(x, y, z, id, { silent: true, force: true });
+                }
+                return World.group;
+            },
+            buildPhysics: () => ({ voxelQuery: (x, y, z) => World.blockDefAt(x, y, z) }),
+            buildAudio: () => null
+        });
+    }
     scene.add(World.group);
 
     function updateGrid() {
@@ -1262,6 +1295,7 @@
         val = Math.max(10, Math.min(200, val));
         const shrinking = val < World.mapSize;
         World.mapSize = val;
+        World.terrain.mapSize = val;
         document.getElementById('mapSizeInput').value = val;
         updateGrid();
         if (shrinking && !opts.silent) {
@@ -1820,7 +1854,8 @@ export function createRuntimeTarget() {
             const raw = localStorage.getItem(AUTOSAVE_KEY);
             if (raw) {
                 const data = JSON.parse(raw);
-                if (data.voxels && Object.keys(data.voxels).length > 0) {
+                // v3 scenes have entity components; v1/v2 keep voxels at root.
+                if ((data.entities && data.entities.length > 0) || (data.voxels && Object.keys(data.voxels).length > 0)) {
                     World.deserialize(data);
                     restored = true;
                 }
