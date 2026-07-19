@@ -6,6 +6,10 @@ anywhere — even offline.
 
 **`index.html` is now only the browser entry point.** The application is composed from native ES modules in `src/` (plus vendored libraries), with no build step required.
 
+An honest audit of where the engine stands against the full AAA-engine
+component map — and the web-first strategy that follows from it — lives in
+[PARITY.md](PARITY.md).
+
 ## Features
 
 ### Editor
@@ -18,6 +22,12 @@ anywhere — even offline.
 - **Resizable maps** up to 200×200; shrinking prunes out-of-bounds blocks as an undoable action
 - **Autosave** — the world persists to `localStorage` every 15 s and on tab close
 - **Save / Load** project JSON files (backwards compatible with v1 saves)
+- **Procedural world generator** — deterministic seeded terrain with hills, water,
+  trees, collectibles, and a guaranteed start/goal (mountain button, or
+  `generate <seed>` in the console); one undoable action
+- **Developer console** (`` ` `` key) — `help`, `stats`, `log`, `generate`,
+  `mapsize`, `mode`, and play-mode cheats (`tp`, `heal`, `give jetpack`);
+  backed by a structured, categorized engine log (`GK.Log`)
 - Interactive tutorial, debug overlay (position, draw calls, triangles, FPS), compass
 
 ### Play mode
