@@ -6,6 +6,13 @@ All notable changes to GamerKraft 3D are documented here. The format follows [Ke
 
 ### Added
 
+- Unreal-style editor shell: World Outliner (live per-type counts, click to jump between instances), Details inspector with Focus/Replace/Delete, a Select tool (`Q`) with selection highlight, `F` camera focus, `Del` to delete, Content Browser with category tabs and live search, a status bar with live engine stats, and a graphite professional theme.
+- Editor fly camera is now Unreal-style: WASD/QE fly only while the right mouse button is held, freeing `Q` for the Select tool.
+
+### Changed
+
+- Block definitions gained a `category` field that drives the Content Browser grouping.
+
 - Runtime developer console (`` ` `` to toggle) with commands: `help`, `stats`, `log`, `loglevel`, `generate`, `mapsize`, `mode`, `tp`, `heal`, `give` — available in the editor and in exported games (world-altering commands stay editor-only).
 - Structured engine logging (`GK.Log`) with categories, severity levels, a ring buffer, and listeners; warnings and errors surface in the console.
 - Deterministic seeded RNG (`GK.Random.createRng` / `toSeed`) — mulberry32, unit-tested.
