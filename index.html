@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>GamerKraft 3D Engine</title>
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect x='10' y='10' width='80' height='80' rx='12' fill='%233b82f6'/%3E%3Crect x='28' y='28' width='44' height='44' rx='6' fill='white'/%3E%3C/svg%3E">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect x='10' y='10' width='80' height='80' rx='12' fill='%230070e0'/%3E%3Crect x='28' y='28' width='44' height='44' rx='6' fill='white'/%3E%3C/svg%3E">
     <script src="vendor/tailwind.js"></script>
     <script src="vendor/lucide.min.js"></script>
     <script src="vendor/three.min.js"></script>
@@ -12,26 +12,108 @@
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=JetBrains+Mono:wght@500&display=swap');
 
+        :root {
+            --ue-bg: #101010;
+            --ue-panel: #1b1b1b;
+            --ue-panel-2: #151515;
+            --ue-border: #000000;
+            --ue-line: #2a2a2a;
+            --ue-text: #c8c8c8;
+            --ue-dim: #7d7d7d;
+            --ue-accent: #0070e0;
+            --ue-accent-soft: rgba(0, 112, 224, 0.35);
+            --ue-warn: #ffb020;
+        }
+
         body {
             font-family: 'Inter', sans-serif;
-            background-color: #0f172a;
-            color: white;
+            background-color: var(--ue-bg);
+            color: var(--ue-text);
             overflow: hidden;
             user-select: none;
         }
 
         .panel {
-            background: rgba(15, 23, 42, 0.95);
-            border: 1px solid #334155;
-            backdrop-filter: blur(8px);
+            background: var(--ue-panel);
+            border-color: var(--ue-border);
+        }
+
+        .ue-header {
+            background: var(--ue-panel-2);
+            border-bottom: 1px solid var(--ue-border);
+            color: var(--ue-dim);
+            font-size: 10px;
+            font-weight: 800;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            padding: 5px 8px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex-shrink: 0;
         }
 
         .tool-btn { transition: all 0.1s; }
         .tool-btn.active {
-            background-color: #2563eb;
+            background-color: var(--ue-accent);
             color: white;
-            border-color: #3b82f6;
+            border-color: #2b8ff5;
         }
+
+        .outliner-row {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 3px 8px;
+            font-size: 11px;
+            cursor: pointer;
+            color: var(--ue-text);
+            white-space: nowrap;
+        }
+        .outliner-row:hover { background: var(--ue-line); }
+        .outliner-row.active { background: var(--ue-accent-soft); }
+        .outliner-row .swatch {
+            width: 9px; height: 9px; border-radius: 2px; flex-shrink: 0;
+            box-shadow: inset 0 0 0 1px rgba(255,255,255,0.15);
+        }
+        .outliner-row .count { margin-left: auto; color: var(--ue-dim); font-family: 'JetBrains Mono', monospace; font-size: 10px; }
+
+        .details-row {
+            display: grid;
+            grid-template-columns: 84px 1fr;
+            gap: 8px;
+            padding: 3px 8px;
+            font-size: 11px;
+            align-items: center;
+        }
+        .details-row .k { color: var(--ue-dim); }
+        .details-row .v { color: var(--ue-text); font-family: 'JetBrains Mono', monospace; font-size: 10.5px; }
+        .details-btn {
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            padding: 4px 8px;
+            border-radius: 3px;
+            background: var(--ue-line);
+            color: var(--ue-text);
+            cursor: pointer;
+        }
+        .details-btn:hover { background: #3a3a3a; }
+        .details-btn.danger:hover { background: #7f1d1d; color: #fecaca; }
+
+        .asset-tab {
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            padding: 3px 9px;
+            border-radius: 3px;
+            color: var(--ue-dim);
+            cursor: pointer;
+        }
+        .asset-tab:hover { color: white; }
+        .asset-tab.active { background: var(--ue-accent); color: white; }
 
         #crosshair {
             position: absolute;
@@ -51,11 +133,13 @@
         body.playing #tools-sidebar,
         body.playing #palette-bar,
         body.playing #tool-hint,
+        body.playing #right-panels,
+        body.playing #status-bar,
         body.playing #map-controls { display: none !important; }
 
-        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
         ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb { background: #3a3a3a; border-radius: 4px; border: 2px solid var(--ue-panel); }
 
         .transition-smooth { transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); }
 
@@ -83,10 +167,11 @@
             padding: 4px;
             filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5));
         }
-        .palette-item.active {
-            border-color: #3b82f6;
-            background-color: #1e293b;
+        .palette-item.active .thumb {
+            outline: 2px solid var(--ue-accent);
+            outline-offset: -2px;
         }
+        .palette-item.active span { color: white; }
 
         #tutorial-overlay { z-index: 9999; }
         #tutorial-spotlight {
@@ -101,26 +186,26 @@
 
         #settings-modal { z-index: 8000; }
         .settings-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-        input[type="range"] { accent-color: #3b82f6; }
+        input[type="range"] { accent-color: var(--ue-accent); }
     </style>
 </head>
 <body class="h-screen w-screen flex flex-col bg-black">
 
     <!-- Game HUD -->
     <div id="game-hud" class="hidden absolute top-16 right-4 z-30 flex gap-2 pointer-events-none items-center">
-        <div id="hearts" class="px-3 py-1 bg-slate-900/80 backdrop-blur rounded text-lg font-bold border border-slate-700 shadow-lg leading-none">
+        <div id="hearts" class="px-3 py-1 bg-black/80 backdrop-blur rounded text-lg font-bold border border-neutral-800 shadow-lg leading-none">
             <span class="heart">&hearts;</span><span class="heart">&hearts;</span><span class="heart">&hearts;</span>
         </div>
-        <div class="px-3 py-1 bg-slate-900/80 backdrop-blur rounded text-yellow-400 font-mono text-sm font-bold border border-slate-700 shadow-lg">
+        <div class="px-3 py-1 bg-black/80 backdrop-blur rounded text-yellow-400 font-mono text-sm font-bold border border-neutral-800 shadow-lg">
             SCORE: <span id="score-val">0</span>
         </div>
-        <div class="px-3 py-1 bg-slate-900/80 backdrop-blur rounded text-amber-300 font-mono text-sm font-bold border border-slate-700 shadow-lg">
+        <div class="px-3 py-1 bg-black/80 backdrop-blur rounded text-amber-300 font-mono text-sm font-bold border border-neutral-800 shadow-lg">
             <span id="coins-val">0/0</span> &#9679;
         </div>
-        <div class="px-3 py-1 bg-slate-900/80 backdrop-blur rounded text-slate-200 font-mono text-sm border border-slate-700 shadow-lg">
+        <div class="px-3 py-1 bg-black/80 backdrop-blur rounded text-neutral-200 font-mono text-sm border border-neutral-800 shadow-lg">
             <span id="timer-val">0:00</span>
         </div>
-        <div class="px-2 py-1 bg-slate-900/80 backdrop-blur rounded text-green-400 font-mono text-xs border border-slate-700 shadow-lg">
+        <div class="px-2 py-1 bg-black/80 backdrop-blur rounded text-green-400 font-mono text-xs border border-neutral-800 shadow-lg">
             FPS: <span id="fps-val">60</span>
         </div>
     </div>
@@ -128,15 +213,15 @@
     <!-- Tutorial Overlay -->
     <div id="tutorial-overlay" class="hidden absolute inset-0 w-full h-full pointer-events-auto">
         <div id="tutorial-spotlight" class="absolute border-2 border-yellow-400"></div>
-        <div id="tutorial-card" class="absolute bg-slate-900 border border-slate-700 p-6 rounded-xl shadow-2xl max-w-sm w-full">
+        <div id="tutorial-card" class="absolute bg-neutral-900 border border-neutral-700 p-6 rounded-xl shadow-2xl max-w-sm w-full">
             <div class="flex items-center justify-between mb-4">
                 <h3 id="tut-title" class="text-xl font-bold text-white">Welcome</h3>
-                <span id="tut-step-count" class="text-xs text-slate-500 font-mono bg-slate-800 px-2 py-1 rounded">1/7</span>
+                <span id="tut-step-count" class="text-xs text-neutral-500 font-mono bg-neutral-800 px-2 py-1 rounded">1/7</span>
             </div>
-            <p id="tut-desc" class="text-slate-300 text-sm mb-6 leading-relaxed">Let's learn how to make a game!</p>
+            <p id="tut-desc" class="text-neutral-300 text-sm mb-6 leading-relaxed">Let's learn how to make a game!</p>
             <div class="flex justify-between">
-                <button onclick="skipTutorial()" class="text-slate-500 hover:text-white text-xs font-bold uppercase tracking-wider">Skip</button>
-                <button onclick="nextTutorialStep()" class="bg-blue-600 hover:bg-blue-500 text-white px-6 py-2 rounded-lg font-bold text-sm shadow-lg">Next</button>
+                <button onclick="skipTutorial()" class="text-neutral-500 hover:text-white text-xs font-bold uppercase tracking-wider">Skip</button>
+                <button onclick="nextTutorialStep()" class="bg-[#0070e0] hover:bg-[#2b8ff5] text-white px-6 py-2 rounded-lg font-bold text-sm shadow-lg">Next</button>
             </div>
         </div>
     </div>
@@ -145,44 +230,44 @@
     <div id="editor-ui" class="absolute inset-0 pointer-events-none z-20 flex flex-col">
 
         <!-- Top Bar -->
-        <div class="h-12 panel border-b flex items-center justify-between px-4 pointer-events-auto shrink-0">
-            <div class="flex items-center gap-4">
-                <div class="flex items-center gap-2 text-blue-500">
-                    <i data-lucide="box" class="w-5 h-5"></i>
-                    <span class="font-black tracking-tight text-white">GAMERKRAFT <span class="text-blue-500 text-xs align-top">ENGINE</span></span>
+        <div class="h-11 panel border-b flex items-center justify-between px-3 pointer-events-auto shrink-0">
+            <div class="flex items-center gap-3">
+                <div class="flex items-center gap-2">
+                    <i data-lucide="box" class="w-5 h-5 text-[#0070e0]"></i>
+                    <span class="font-black tracking-tight text-white text-sm">GAMERKRAFT <span class="text-[#0070e0] text-[10px] align-top">ENGINE</span></span>
                 </div>
-                <div class="h-4 w-px bg-slate-700"></div>
-                <div id="mode-controls" class="flex bg-slate-800 rounded p-0.5">
-                    <button id="modeEdit" onclick="setMode('EDIT')" class="px-3 py-1 text-xs font-bold rounded bg-blue-600 text-white shadow">EDITOR</button>
-                    <button id="modePlay" onclick="setMode('PLAY')" class="px-3 py-1 text-xs font-bold rounded text-slate-400 hover:text-white">PLAY</button>
-                </div>
-
-                <div id="map-controls" class="flex items-center gap-2 text-xs ml-4">
-                    <span class="text-slate-400 font-bold">MAP SIZE:</span>
-                    <input type="number" id="mapSizeInput" value="20" min="10" max="200" class="w-14 bg-slate-800 border border-slate-700 rounded px-1 py-0.5 text-center" onchange="setMapSize(this.value)">
+                <div class="h-4 w-px bg-neutral-800"></div>
+                <div id="mode-controls" class="flex bg-black/60 rounded p-0.5 border border-neutral-800">
+                    <button id="modeEdit" onclick="setMode('EDIT')" class="px-3 py-1 text-xs font-bold rounded bg-[#0070e0] text-white shadow">EDITOR</button>
+                    <button id="modePlay" onclick="setMode('PLAY')" class="px-3 py-1 text-xs font-bold rounded text-neutral-400 hover:text-white">PLAY</button>
                 </div>
 
-                <div class="flex items-center gap-1 ml-4 border-l border-slate-700 pl-4">
-                    <button onclick="zoomCamera(1)" class="p-1.5 hover:bg-slate-800 rounded text-slate-400 hover:text-white transition-colors" title="Zoom In">
+                <div id="map-controls" class="flex items-center gap-2 text-xs ml-2">
+                    <span class="text-neutral-500 font-bold text-[10px] uppercase tracking-wider">Map</span>
+                    <input type="number" id="mapSizeInput" value="20" min="10" max="200" class="w-14 bg-black/60 border border-neutral-800 rounded px-1 py-0.5 text-center" onchange="setMapSize(this.value)">
+                </div>
+
+                <div class="flex items-center gap-1 ml-2 border-l border-neutral-800 pl-3">
+                    <button onclick="zoomCamera(1)" class="p-1.5 hover:bg-neutral-800 rounded text-neutral-400 hover:text-white transition-colors" title="Zoom In">
                         <i data-lucide="zoom-in" class="w-4 h-4"></i>
                     </button>
-                    <button onclick="zoomCamera(-1)" class="p-1.5 hover:bg-slate-800 rounded text-slate-400 hover:text-white transition-colors" title="Zoom Out">
+                    <button onclick="zoomCamera(-1)" class="p-1.5 hover:bg-neutral-800 rounded text-neutral-400 hover:text-white transition-colors" title="Zoom Out">
                         <i data-lucide="zoom-out" class="w-4 h-4"></i>
                     </button>
                 </div>
             </div>
 
-            <div class="flex items-center gap-2">
-                <button onclick="undo()" class="p-1.5 hover:bg-slate-800 rounded text-slate-400 hover:text-white" title="Undo (Ctrl+Z)"><i data-lucide="undo" class="w-4 h-4"></i></button>
-                <button onclick="redo()" class="p-1.5 hover:bg-slate-800 rounded text-slate-400 hover:text-white" title="Redo (Ctrl+Y)"><i data-lucide="redo" class="w-4 h-4"></i></button>
-                <div class="h-4 w-px bg-slate-700 mx-1"></div>
+            <div class="flex items-center gap-1">
+                <button onclick="undo()" class="p-1.5 hover:bg-neutral-800 rounded text-neutral-400 hover:text-white" title="Undo (Ctrl+Z)"><i data-lucide="undo" class="w-4 h-4"></i></button>
+                <button onclick="redo()" class="p-1.5 hover:bg-neutral-800 rounded text-neutral-400 hover:text-white" title="Redo (Ctrl+Y)"><i data-lucide="redo" class="w-4 h-4"></i></button>
+                <div class="h-4 w-px bg-neutral-800 mx-1"></div>
 
-                <button onclick="startTutorial()" class="p-1.5 hover:bg-slate-800 rounded text-yellow-400 hover:text-yellow-300" title="Start Tutorial"><i data-lucide="help-circle" class="w-4 h-4"></i></button>
-                <button id="btn-settings" onclick="toggleSettings()" class="p-1.5 hover:bg-slate-800 rounded text-slate-400 hover:text-white" title="Settings"><i data-lucide="settings" class="w-4 h-4"></i></button>
-                <button onclick="toggleDebug()" class="p-1.5 hover:bg-slate-800 rounded text-slate-400 hover:text-white" title="Toggle Debug"><i data-lucide="bug" class="w-4 h-4"></i></button>
-                <button onclick="saveProjectFile()" class="p-1.5 hover:bg-slate-800 rounded text-slate-400 hover:text-white" title="Save Project"><i data-lucide="save" class="w-4 h-4"></i></button>
-                <button onclick="document.getElementById('fileInput').click()" class="p-1.5 hover:bg-slate-800 rounded text-slate-400 hover:text-white" title="Load Project"><i data-lucide="folder-open" class="w-4 h-4"></i></button>
-                <button id="btn-publish" onclick="publishGame()" class="flex items-center gap-2 bg-green-600 hover:bg-green-500 text-white px-3 py-1 rounded text-xs font-bold transition-colors shadow">
+                <button onclick="startTutorial()" class="p-1.5 hover:bg-neutral-800 rounded text-yellow-400 hover:text-yellow-300" title="Start Tutorial"><i data-lucide="help-circle" class="w-4 h-4"></i></button>
+                <button id="btn-settings" onclick="toggleSettings()" class="p-1.5 hover:bg-neutral-800 rounded text-neutral-400 hover:text-white" title="Settings"><i data-lucide="settings" class="w-4 h-4"></i></button>
+                <button onclick="toggleDebug()" class="p-1.5 hover:bg-neutral-800 rounded text-neutral-400 hover:text-white" title="Toggle Debug"><i data-lucide="bug" class="w-4 h-4"></i></button>
+                <button onclick="saveProjectFile()" class="p-1.5 hover:bg-neutral-800 rounded text-neutral-400 hover:text-white" title="Save Project"><i data-lucide="save" class="w-4 h-4"></i></button>
+                <button onclick="document.getElementById('fileInput').click()" class="p-1.5 hover:bg-neutral-800 rounded text-neutral-400 hover:text-white" title="Load Project"><i data-lucide="folder-open" class="w-4 h-4"></i></button>
+                <button id="btn-publish" onclick="publishGame()" class="flex items-center gap-2 bg-green-700 hover:bg-green-600 text-white px-3 py-1 rounded text-xs font-bold transition-colors shadow ml-1">
                     <i data-lucide="rocket" class="w-3 h-3"></i> PUBLISH
                 </button>
                 <input type="file" id="fileInput" class="hidden" accept=".json" onchange="loadProjectFile(this)">
@@ -190,74 +275,114 @@
         </div>
 
         <div class="flex-1 flex overflow-hidden">
-            <div id="tools-sidebar" class="w-16 panel border-r flex flex-col items-center py-4 gap-4 pointer-events-auto">
-                <div class="flex flex-col gap-2 w-full px-2">
-                    <span class="text-[10px] text-slate-500 font-bold text-center uppercase">Tools</span>
-                    <button onclick="setTool('brush')" id="tool-brush" class="tool-btn active w-full aspect-square rounded flex items-center justify-center bg-slate-800 border border-slate-700 text-slate-400 hover:text-white" title="Brush (B)">
-                        <i data-lucide="paintbrush" class="w-5 h-5"></i>
+            <!-- Tool palette -->
+            <div id="tools-sidebar" class="w-12 panel border-r flex flex-col items-center py-3 gap-3 pointer-events-auto">
+                <div class="flex flex-col gap-1.5 w-full px-1.5">
+                    <span class="text-[9px] text-neutral-600 font-bold text-center uppercase tracking-wider">Tools</span>
+                    <button onclick="setTool('select')" id="tool-select" class="tool-btn w-full aspect-square rounded flex items-center justify-center bg-neutral-900 border border-neutral-800 text-neutral-400 hover:text-white" title="Select (Q) — click a block, F to focus, Del to delete">
+                        <i data-lucide="mouse-pointer-2" class="w-4 h-4"></i>
                     </button>
-                    <button onclick="setTool('box')" id="tool-box" class="tool-btn w-full aspect-square rounded flex items-center justify-center bg-slate-800 border border-slate-700 text-slate-400 hover:text-white" title="Box Fill (V)">
-                        <i data-lucide="box-select" class="w-5 h-5"></i>
+                    <button onclick="setTool('brush')" id="tool-brush" class="tool-btn active w-full aspect-square rounded flex items-center justify-center bg-neutral-900 border border-neutral-800 text-neutral-400 hover:text-white" title="Brush (B)">
+                        <i data-lucide="paintbrush" class="w-4 h-4"></i>
                     </button>
-                    <button onclick="setTool('eraser')" id="tool-eraser" class="tool-btn w-full aspect-square rounded flex items-center justify-center bg-slate-800 border border-slate-700 text-slate-400 hover:text-white hover:border-red-500" title="Eraser (X)">
-                        <i data-lucide="eraser" class="w-5 h-5"></i>
+                    <button onclick="setTool('box')" id="tool-box" class="tool-btn w-full aspect-square rounded flex items-center justify-center bg-neutral-900 border border-neutral-800 text-neutral-400 hover:text-white" title="Box Fill (V)">
+                        <i data-lucide="box-select" class="w-4 h-4"></i>
+                    </button>
+                    <button onclick="setTool('eraser')" id="tool-eraser" class="tool-btn w-full aspect-square rounded flex items-center justify-center bg-neutral-900 border border-neutral-800 text-neutral-400 hover:text-white hover:border-red-500" title="Eraser (X)">
+                        <i data-lucide="eraser" class="w-4 h-4"></i>
                     </button>
                 </div>
 
-                <div class="h-px w-8 bg-slate-700"></div>
+                <div class="h-px w-7 bg-neutral-800"></div>
 
-                <div class="flex flex-col gap-2 w-full px-2">
-                    <span class="text-[10px] text-slate-500 font-bold text-center uppercase">Action</span>
-                    <button onclick="generateWorld()" class="w-full aspect-square rounded flex items-center justify-center bg-slate-800 border border-slate-700 text-emerald-400 hover:bg-emerald-900/50 hover:text-emerald-200" title="Generate World (procedural terrain, Ctrl+Z to undo)">
-                        <i data-lucide="mountain" class="w-5 h-5"></i>
+                <div class="flex flex-col gap-1.5 w-full px-1.5">
+                    <span class="text-[9px] text-neutral-600 font-bold text-center uppercase tracking-wider">Action</span>
+                    <button onclick="generateWorld()" class="w-full aspect-square rounded flex items-center justify-center bg-neutral-900 border border-neutral-800 text-emerald-400 hover:bg-emerald-900/50 hover:text-emerald-200" title="Generate World (procedural terrain, Ctrl+Z to undo)">
+                        <i data-lucide="mountain" class="w-4 h-4"></i>
                     </button>
-                    <button onclick="clearWorld()" class="w-full aspect-square rounded flex items-center justify-center bg-slate-800 border border-slate-700 text-red-400 hover:bg-red-900/50 hover:text-red-200" title="Clear All">
-                        <i data-lucide="trash-2" class="w-5 h-5"></i>
+                    <button onclick="clearWorld()" class="w-full aspect-square rounded flex items-center justify-center bg-neutral-900 border border-neutral-800 text-red-400 hover:bg-red-900/50 hover:text-red-200" title="Clear All">
+                        <i data-lucide="trash-2" class="w-4 h-4"></i>
                     </button>
                 </div>
             </div>
 
+            <!-- Viewport -->
             <div class="flex-1 relative">
-                <div id="tool-hint" class="absolute top-4 left-1/2 -translate-x-1/2 bg-black/70 text-white text-xs px-3 py-1 rounded-full backdrop-blur-sm border border-white/20 pointer-events-none transition-smooth">
+                <div id="tool-hint" class="absolute top-3 left-1/2 -translate-x-1/2 bg-black/70 text-white text-xs px-3 py-1 rounded-full backdrop-blur-sm border border-white/10 pointer-events-none transition-smooth">
                     WASD/QE: Fly &bull; Right-Drag: Look &bull; Left-Click: Place &bull; Alt-Click: Pick
+                </div>
+            </div>
+
+            <!-- World Outliner + Details -->
+            <div id="right-panels" class="w-72 panel border-l flex flex-col pointer-events-auto">
+                <div id="outliner-panel" class="h-2/5 flex flex-col border-b border-black">
+                    <div class="ue-header"><i data-lucide="list-tree" class="w-3 h-3"></i> World Outliner <span id="outliner-total" class="ml-auto font-mono normal-case tracking-normal"></span></div>
+                    <div id="outliner-list" class="flex-1 overflow-y-auto py-1"></div>
+                </div>
+                <div id="details-panel" class="flex-1 flex flex-col min-h-0">
+                    <div class="ue-header"><i data-lucide="sliders-horizontal" class="w-3 h-3"></i> Details</div>
+                    <div id="details-content" class="flex-1 overflow-y-auto py-1"></div>
                 </div>
             </div>
         </div>
 
-        <div id="palette-bar" class="h-28 panel border-t p-2 pointer-events-auto shrink-0 flex justify-center items-center">
-            <div class="flex gap-2 overflow-x-auto px-2 pb-2 w-full justify-center" id="block-palette"></div>
+        <!-- Content Browser -->
+        <div id="palette-bar" class="h-40 panel border-t pointer-events-auto shrink-0 flex flex-col">
+            <div class="ue-header">
+                <i data-lucide="folder-tree" class="w-3 h-3"></i> Content Browser
+                <div id="asset-tabs" class="flex items-center gap-1 ml-3 normal-case tracking-normal"></div>
+                <div class="ml-auto flex items-center gap-1.5">
+                    <i data-lucide="search" class="w-3 h-3"></i>
+                    <input id="asset-search" type="text" placeholder="Search blocks..." autocomplete="off" spellcheck="false"
+                        class="bg-black/60 border border-neutral-800 rounded px-2 py-0.5 text-[11px] w-44 outline-none focus:border-[#0070e0] text-white placeholder-neutral-600 normal-case font-normal tracking-normal"
+                        oninput="filterAssets(this.value)">
+                </div>
+            </div>
+            <div class="flex-1 flex items-center overflow-hidden">
+                <div class="flex gap-1.5 overflow-x-auto px-3 py-2 w-full items-start" id="block-palette"></div>
+            </div>
+        </div>
+
+        <!-- Status Bar -->
+        <div id="status-bar" class="h-6 panel border-t flex items-center gap-4 px-3 text-[10px] font-mono text-neutral-500 shrink-0 pointer-events-auto">
+            <span>MODE <span id="status-mode" class="text-neutral-300">EDIT</span></span>
+            <span>TOOL <span id="status-tool" class="text-neutral-300">brush</span></span>
+            <span>VOXELS <span id="status-voxels" class="text-neutral-300">0</span></span>
+            <span>DRAW CALLS <span id="status-draws" class="text-neutral-300">0</span></span>
+            <span>FPS <span id="status-fps" class="text-neutral-300">60</span></span>
+            <span class="ml-auto text-neutral-600">` console &bull; Q select &bull; B brush &bull; V box &bull; X eraser &bull; F focus</span>
         </div>
     </div>
 
     <!-- Notification -->
-    <div id="notification" class="hidden absolute top-20 left-1/2 -translate-x-1/2 bg-slate-800/95 backdrop-blur border border-slate-600 text-white px-6 py-3 rounded-lg shadow-2xl z-[60] flex items-center gap-3">
+    <div id="notification" class="hidden absolute top-16 left-1/2 -translate-x-1/2 bg-neutral-900/95 backdrop-blur border border-neutral-700 text-white px-6 py-3 rounded-lg shadow-2xl z-[60] flex items-center gap-3">
         <div id="notif-icon"><i data-lucide="info" class="w-5 h-5 text-blue-400"></i></div>
         <span id="notification-msg" class="font-medium text-sm">Message</span>
     </div>
 
     <!-- Start Screen (exported games) -->
-    <div id="start-screen" class="hidden absolute inset-0 bg-slate-950 z-50 flex items-center justify-center flex-col">
-        <h1 class="text-6xl font-black text-white mb-2 tracking-tight animate-pulse">GAMERKRAFT <span class="text-blue-500">3D</span></h1>
-        <p class="text-slate-400 mb-8">Built with GamerKraft Engine</p>
-        <button onclick="startExportedGame()" class="bg-blue-600 hover:bg-blue-500 text-white px-8 py-3 rounded-full font-bold text-lg shadow-lg transition-transform hover:scale-105">START GAME</button>
+    <div id="start-screen" class="hidden absolute inset-0 bg-black z-50 flex items-center justify-center flex-col">
+        <h1 class="text-6xl font-black text-white mb-2 tracking-tight animate-pulse">GAMERKRAFT <span class="text-[#0070e0]">3D</span></h1>
+        <p class="text-neutral-400 mb-8">Built with GamerKraft Engine</p>
+        <button onclick="startExportedGame()" class="bg-[#0070e0] hover:bg-[#2b8ff5] text-white px-8 py-3 rounded-full font-bold text-lg shadow-lg transition-transform hover:scale-105">START GAME</button>
     </div>
 
     <!-- Game Over / Victory Overlay -->
-    <div id="game-overlay" class="hidden absolute inset-0 bg-slate-900/90 backdrop-blur-md z-40 flex items-center justify-center flex-col">
+    <div id="game-overlay" class="hidden absolute inset-0 bg-black/90 backdrop-blur-md z-40 flex items-center justify-center flex-col">
         <h1 id="overlay-title" class="text-6xl font-black mb-4 text-white">VICTORY</h1>
-        <p id="overlay-msg" class="text-2xl text-slate-300 mb-8">Score: 0</p>
+        <p id="overlay-msg" class="text-2xl text-neutral-300 mb-8">Score: 0</p>
         <div class="flex gap-4">
-            <button onclick="restartGame()" class="bg-white text-slate-900 px-8 py-3 rounded-full font-bold hover:scale-105 transition-transform shadow-lg cursor-pointer pointer-events-auto">PLAY AGAIN</button>
-            <button onclick="setMode('EDIT')" class="editor-only bg-slate-700 text-white px-8 py-3 rounded-full font-bold hover:scale-105 transition-transform shadow-lg cursor-pointer pointer-events-auto">BACK TO EDITOR</button>
+            <button onclick="restartGame()" class="bg-white text-black px-8 py-3 rounded-full font-bold hover:scale-105 transition-transform shadow-lg cursor-pointer pointer-events-auto">PLAY AGAIN</button>
+            <button onclick="setMode('EDIT')" class="editor-only bg-neutral-800 text-white px-8 py-3 rounded-full font-bold hover:scale-105 transition-transform shadow-lg cursor-pointer pointer-events-auto">BACK TO EDITOR</button>
         </div>
     </div>
 
     <!-- Settings Modal -->
     <div id="settings-modal" class="hidden absolute inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center pointer-events-auto">
-        <div class="bg-slate-900 border border-slate-700 rounded-xl p-6 w-96 shadow-2xl space-y-4">
+        <div class="bg-neutral-900 border border-neutral-700 rounded-xl p-6 w-96 shadow-2xl space-y-4">
             <div class="flex items-center justify-between mb-2">
                 <h3 class="text-lg font-bold">Engine Settings</h3>
-                <button onclick="toggleSettings()" class="text-slate-500 hover:text-white"><i data-lucide="x" class="w-5 h-5"></i></button>
+                <button onclick="toggleSettings()" class="text-neutral-500 hover:text-white"><i data-lucide="x" class="w-5 h-5"></i></button>
             </div>
             <div class="settings-row text-sm">
                 <span>Shadows</span>
@@ -268,7 +393,7 @@
                 <input type="checkbox" id="set-particles" checked onchange="Settings.set('particles', this.checked)">
             </div>
             <div class="settings-row text-sm">
-                <span>Third-Person Camera <span class="text-slate-500">(C in play)</span></span>
+                <span>Third-Person Camera <span class="text-neutral-500">(C in play)</span></span>
                 <input type="checkbox" id="set-thirdperson" checked onchange="Settings.set('thirdPerson', this.checked)">
             </div>
             <div class="settings-row text-sm">
@@ -287,11 +412,11 @@
     </div>
 
     <!-- Developer Console (` to toggle) -->
-    <div id="dev-console" class="hidden absolute top-0 inset-x-0 z-[8500] bg-black/90 border-b border-slate-700 font-mono text-xs backdrop-blur">
-        <div id="console-out" class="max-h-56 overflow-y-auto px-3 py-2 space-y-0.5 text-slate-300"></div>
-        <div class="flex items-center gap-2 px-3 py-2 border-t border-slate-800">
+    <div id="dev-console" class="hidden absolute top-0 inset-x-0 z-[8500] bg-black/90 border-b border-neutral-800 font-mono text-xs backdrop-blur">
+        <div id="console-out" class="max-h-56 overflow-y-auto px-3 py-2 space-y-0.5 text-neutral-300"></div>
+        <div class="flex items-center gap-2 px-3 py-2 border-t border-neutral-900">
             <span class="text-green-400">&gt;</span>
-            <input id="console-input" type="text" autocomplete="off" spellcheck="false" placeholder="help" class="flex-1 bg-transparent outline-none text-white placeholder-slate-600">
+            <input id="console-input" type="text" autocomplete="off" spellcheck="false" placeholder="help" class="flex-1 bg-transparent outline-none text-white placeholder-neutral-700">
         </div>
     </div>
 
@@ -302,12 +427,12 @@
     </div>
 
     <!-- Compass -->
-    <div id="compass" class="absolute bottom-36 right-6 w-16 h-16 bg-slate-900/90 rounded-full border-2 border-slate-600 shadow-xl z-10 overflow-hidden pointer-events-none">
+    <div id="compass" class="absolute bottom-48 right-80 w-16 h-16 bg-black/80 rounded-full border-2 border-neutral-700 shadow-xl z-10 overflow-hidden pointer-events-none">
         <div id="compass-face" class="w-full h-full relative transition-transform duration-75 ease-linear">
             <span class="absolute top-1 left-1/2 -translate-x-1/2 text-[10px] font-bold text-red-500">N</span>
-            <span class="absolute bottom-1 left-1/2 -translate-x-1/2 text-[8px] font-bold text-slate-400">S</span>
-            <span class="absolute right-2 top-1/2 -translate-y-1/2 text-[8px] font-bold text-slate-400">E</span>
-            <span class="absolute left-2 top-1/2 -translate-y-1/2 text-[8px] font-bold text-slate-400">W</span>
+            <span class="absolute bottom-1 left-1/2 -translate-x-1/2 text-[8px] font-bold text-neutral-400">S</span>
+            <span class="absolute right-2 top-1/2 -translate-y-1/2 text-[8px] font-bold text-neutral-400">E</span>
+            <span class="absolute left-2 top-1/2 -translate-y-1/2 text-[8px] font-bold text-neutral-400">W</span>
         </div>
         <div class="absolute top-0 left-1/2 -translate-x-1/2 w-0 h-2 border-x-[3px] border-x-transparent border-t-[6px] border-t-yellow-400"></div>
     </div>
@@ -318,7 +443,7 @@
         </svg>
     </div>
 
-    <div id="canvas-container" class="absolute inset-0 z-0 bg-slate-900 cursor-crosshair"></div>
+    <div id="canvas-container" class="absolute inset-0 z-0 bg-black cursor-crosshair"></div>
 
     <script>
         // Browsers block fetching ES modules from file://, which would leave a
