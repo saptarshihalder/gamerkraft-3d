@@ -27,6 +27,8 @@ All notable changes to GamerKraft 3D are documented here. The format follows [Ke
 
 ### Fixed
 
+- A deploy can no longer half-break the live editor: the deployed `index.html` is now the same fully inlined single-file build as the offline editor, so page markup and engine update atomically and caches cannot serve a mixed version. The engine also null-guards the status bar and developer console so stale cached markup degrades gracefully instead of killing the frame loop.
+
 - Published games are playable again: the exporter now bundles the engine's whole module graph into the standalone HTML file instead of embedding only `engine.js`, whose relative imports cannot resolve outside the repository.
 - Loading a saved project no longer fails: the load path accepts the version 3 scene documents that saving produces (and still accepts legacy voxel payloads), and validates files before clearing the current world.
 

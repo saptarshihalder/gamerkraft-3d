@@ -1298,6 +1298,8 @@
             this.el = document.getElementById('dev-console');
             this.out = document.getElementById('console-out');
             this.input = document.getElementById('console-input');
+            // Stale cached markup during a deploy may lack the console DOM.
+            if (!this.el || !this.out || !this.input) { this.el = this.out = this.input = null; return; }
             this.input.addEventListener('keydown', e => {
                 e.stopPropagation();
                 if (e.code === 'Enter') {
@@ -1326,6 +1328,7 @@
             });
         },
         toggle() {
+            if (!this.el) return;
             const open = !this.el.classList.toggle('hidden');
             if (open) {
                 if (state.mode === 'PLAY' && document.exitPointerLock) document.exitPointerLock();
@@ -1335,6 +1338,7 @@
             }
         },
         print(text, cls = 'text-slate-300') {
+            if (!this.out) return;
             const line = document.createElement('div');
             line.className = cls;
             line.textContent = text;
@@ -1647,11 +1651,14 @@
     function scheduleOutliner() { outlinerSignature = null; }
 
     function updateStatusBar() {
-        UI.el['status-mode'].innerText = state.mode;
-        UI.el['status-tool'].innerText = state.tool;
-        UI.el['status-voxels'].innerText = Object.keys(World.voxels).length;
-        UI.el['status-draws'].innerText = renderer.lastDiagnostics.drawCalls;
-        UI.el['status-fps'].innerText = state.time.fps;
+        // Null-guarded: a stale cached page during a deploy may lack these
+        // elements, and a missing status bar must never break the frame loop.
+        const set = (id, value) => { const el = UI.el[id]; if (el) el.innerText = value; };
+        set('status-mode', state.mode);
+        set('status-tool', state.tool);
+        set('status-voxels', Object.keys(World.voxels).length);
+        set('status-draws', renderer.lastDiagnostics.drawCalls);
+        set('status-fps', state.time.fps);
     }
 
     // ----------------------------------------------------------------- Input --
