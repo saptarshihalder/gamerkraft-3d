@@ -15,7 +15,7 @@ test('the engine module graph flattens into a single import-free script', async 
   // Every static dependency of the engine must be inlined exactly once.
   for (const mod of ['engine.js', 'module-bundler.js', 'index.js', 'renderer.js', 'three-webgl-renderer.js',
     'scene.js', 'scene-importer.js', 'systems.js', 'block-definitions.js', 'actions.js',
-    'voxel-aabb-world.js', 'uuid.js', 'asset-registry.js']) {
+    'voxel-aabb-world.js', 'uuid.js', 'asset-registry.js', 'log.js', 'random.js', 'terrain-generator.js']) {
     assert.equal(bundle.split(`${path.sep}${mod} ----`).length, 2, `${mod} is inlined exactly once`);
   }
   // No module syntax may survive flattening: the bundle must run as one
