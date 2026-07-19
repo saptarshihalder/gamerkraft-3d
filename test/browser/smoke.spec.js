@@ -72,6 +72,8 @@ test("the offline editor boots from file:// and publishes offline", async ({
 test("the developer console generates deterministic playable terrain", async ({
   page,
 }) => {
+  // Parallel software-GL browsers in CI make booting and generation slow.
+  test.setTimeout(120_000);
   await page.goto("/");
   await expect.poll(() => page.evaluate(() => typeof window.GK)).toBe("object");
 

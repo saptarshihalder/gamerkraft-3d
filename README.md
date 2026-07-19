@@ -14,8 +14,15 @@ component map — and the web-first strategy that follows from it — lives in
 
 ### Editor
 
-- **Fly camera** — WASD + Q/E to fly, hold right mouse to look, arrow keys also rotate, scroll wheel to dolly
-- **Tools** — Brush (`B`) with click-drag painting, Box fill (`V`), area Eraser (`X`), Alt/middle-click eyedropper
+- **Unreal-style editor shell** — World Outliner with live per-type counts and
+  jump-to-instance, Details inspector (Focus / Replace / Delete), Content
+  Browser with category tabs and live search, and a status bar with live
+  engine stats
+- **Fly camera** — hold right mouse to look and fly with WASD + Q/E
+  (Unreal-style), arrow keys rotate, scroll wheel dollies
+- **Tools** — Select (`Q`) with highlight, `F` to focus, `Del` to delete;
+  Brush (`B`) with click-drag painting, Box fill (`V`), area Eraser (`X`),
+  Alt/middle-click eyedropper
 - **22 block types** — terrain, glass, ice (slippery), ladders (climbable), water, lava, trees, spikes, jump/speed pads, coins, gems, enemy spawners, turrets, jetpack pickups, checkpoints, start/goal markers
 - **Delta-based undo/redo** (`Ctrl+Z` / `Ctrl+Y`, 50 levels) — each stroke, box fill, clear, or map resize is one undoable action
 - **Quick-select** — number keys `1`–`0` pick palette slots
@@ -57,10 +64,10 @@ component map — and the web-first strategy that follows from it — lives in
 
 ## Controls
 
-| Context | Keys                                                                                                                                 |
-| ------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| Editor  | `WASD` + `Q`/`E` fly, right-drag look, wheel dolly, `B`/`V`/`X` tools, `1`–`0` palette, `Ctrl+Z`/`Y` undo/redo, Alt-click eyedropper |
-| Play    | `WASD` move, `SPACE` jump/climb/jetpack, `Shift` sprint/descend, mouse look (click to capture), click shoot, `C` camera toggle       |
+| Context | Keys                                                                                                                                                                     |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Editor  | Hold RMB + `WASD`/`Q`/`E` fly & look, wheel dolly, `Q` select, `F` focus, `Del` delete, `B`/`V`/`X` tools, `1`–`0` palette, `Ctrl+Z`/`Y` undo/redo, Alt-click eyedropper |
+| Play    | `WASD` move, `SPACE` jump/climb/jetpack, `Shift` sprint/descend, mouse look (click to capture), click shoot, `C` camera toggle                                           |
 
 ## Project structure
 
