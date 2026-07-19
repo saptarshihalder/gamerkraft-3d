@@ -134,6 +134,11 @@
     boxHelper.visible = false;
     scene.add(boxHelper);
 
+    // Editor selection highlight (Select tool / outliner)
+    const selHelper = new THREE.Box3Helper(new THREE.Box3(), 0xffb020);
+    selHelper.visible = false;
+    scene.add(selHelper);
+
     // Player avatar
     const playerMesh = new THREE.Mesh(
         new THREE.BoxGeometry(0.6, PHYS.PLAYER_HEIGHT, 0.6),
@@ -182,6 +187,7 @@
         mode: 'EDIT',
         tool: 'brush',
         blockId: 1,
+        selected: null,      // { x, y, z } cell inspected in the details panel
         keys: {},
         mouse: { rightDown: false, leftDown: false },
         painting: false,
@@ -711,7 +717,8 @@
         init() {
             const ids = ['notification', 'notification-msg', 'notif-icon', 'score-val', 'coins-val',
                 'timer-val', 'fps-val', 'hearts', 'game-hud', 'crosshair', 'game-overlay',
-                'overlay-title', 'overlay-msg', 'debug-panel', 'debug-content', 'compass-face', 'tool-hint'];
+                'overlay-title', 'overlay-msg', 'debug-panel', 'debug-content', 'compass-face', 'tool-hint',
+                'status-mode', 'status-tool', 'status-voxels', 'status-draws', 'status-fps'];
             ids.forEach(id => this.el[id] = document.getElementById(id));
         },
         notify(msg, type = 'info') {
@@ -1190,6 +1197,7 @@
             UI.el['crosshair'].classList.add('hidden');
             UI.el['game-overlay'].classList.add('hidden');
             ghost.visible = true;
+            if (state.selected) selHelper.visible = true;
             playerMesh.visible = false;
             axes.visible = true;
             if (grid) grid.visible = true;
@@ -1209,6 +1217,7 @@
             UI.el['crosshair'].classList.remove('hidden');
             ghost.visible = false;
             boxHelper.visible = false;
+            selHelper.visible = false;
             axes.visible = false;
             if (grid) grid.visible = false;
             scene.background.setHex(COLORS.playBg);
@@ -1446,37 +1455,204 @@
         const btn = document.getElementById(`tool-${state.tool}`);
         if (btn) btn.classList.add('active');
         UI.el['tool-hint'].innerText =
-            state.tool === 'box' ? 'Left Drag: Fill Area • Right-Drag: Look • WASD/QE: Fly' :
-            state.tool === 'eraser' ? 'Left Drag: Erase Area • Right-Drag: Look • WASD/QE: Fly' :
-            'Left Click/Drag: Paint • Alt-Click: Pick Block • Right-Drag: Look • WASD/QE: Fly';
+            state.tool === 'select' ? 'Click: Select • F: Focus • Del: Delete • Hold RMB + WASD/QE: Fly' :
+            state.tool === 'box' ? 'Left Drag: Fill Area • Hold RMB: Look + WASD/QE Fly' :
+            state.tool === 'eraser' ? 'Left Drag: Erase Area • Hold RMB: Look + WASD/QE Fly' :
+            'Left Click/Drag: Paint • Alt-Click: Pick Block • Hold RMB: Look + WASD/QE Fly';
     }
 
-    function selectPaletteIndex(i) {
-        const items = document.querySelectorAll('.palette-item');
-        if (i < 0 || i >= BLOCKS.length || !items[i]) return;
-        state.blockId = BLOCKS[i].id;
+    function selectPaletteBlock(id) {
+        if (!BLOCK_MAP.has(id)) return;
+        state.blockId = id;
         state.tool = 'brush';
         updateToolUI();
-        items.forEach(el => el.classList.remove('active'));
-        items[i].classList.add('active');
+        syncPaletteActive();
     }
 
-    // Palette (data-URI icons: no blob leaks, works in exports)
+    // Number keys and the eyedropper address blocks by catalog index.
+    function selectPaletteIndex(i) {
+        if (i < 0 || i >= BLOCKS.length) return;
+        selectPaletteBlock(BLOCKS[i].id);
+    }
+
+    function syncPaletteActive() {
+        document.querySelectorAll('.palette-item').forEach(el =>
+            el.classList.toggle('active', +el.dataset.blockId === state.blockId));
+    }
+
+    // Content browser (data-URI icons: no blob leaks, works in exports).
+    // Blocks are grouped by category with live search, like an asset browser.
     const paletteEl = document.getElementById('block-palette');
-    BLOCKS.forEach((b, i) => {
-        const btn = document.createElement('div');
-        btn.className = 'palette-item flex flex-col items-center gap-1 min-w-[64px] cursor-pointer opacity-70 hover:opacity-100 transition-opacity rounded-lg border-2 border-transparent';
-        const url = 'data:image/svg+xml;utf8,' + encodeURIComponent(getIcon(b.imgType, b.color));
-        btn.innerHTML = `
-            <div class="w-12 h-12 rounded bg-slate-800 shadow-md">
-                <img src="${url}" class="w-full h-full object-contain p-2" draggable="false" alt="${b.name}">
-            </div>
-            <span class="text-[9px] font-bold text-slate-400 uppercase tracking-wider">${b.name}</span>
-        `;
-        btn.title = `${b.name} (${i < 9 ? i + 1 : i === 9 ? 0 : ''})`;
-        btn.onclick = () => selectPaletteIndex(i);
-        paletteEl.appendChild(btn);
-    });
+    const assetFilter = { category: 'All', search: '' };
+
+    function buildAssetTabs() {
+        const tabs = document.getElementById('asset-tabs');
+        if (!tabs) return;
+        tabs.innerHTML = '';
+        for (const category of ['All', ...new Set(BLOCKS.map(b => b.category))]) {
+            const tab = document.createElement('button');
+            tab.className = 'asset-tab' + (assetFilter.category === category ? ' active' : '');
+            tab.textContent = category;
+            tab.onclick = () => { assetFilter.category = category; buildAssetTabs(); buildPalette(); };
+            tabs.appendChild(tab);
+        }
+    }
+
+    function buildPalette() {
+        if (!paletteEl) return;
+        paletteEl.innerHTML = '';
+        const query = assetFilter.search.trim().toLowerCase();
+        const visible = BLOCKS.filter(b =>
+            (assetFilter.category === 'All' || b.category === assetFilter.category) &&
+            (!query || b.name.toLowerCase().includes(query)));
+        for (const b of visible) {
+            const idx = BLOCKS.indexOf(b);
+            const btn = document.createElement('div');
+            btn.className = 'palette-item flex flex-col items-center gap-1 min-w-[56px] cursor-pointer opacity-80 hover:opacity-100 transition-opacity rounded';
+            btn.dataset.blockId = b.id;
+            const url = 'data:image/svg+xml;utf8,' + encodeURIComponent(getIcon(b.imgType, b.color));
+            btn.innerHTML = `
+                <div class="thumb w-11 h-11 rounded bg-neutral-900 border border-neutral-800 shadow-md">
+                    <img src="${url}" class="w-full h-full object-contain p-1.5" draggable="false" alt="${b.name}">
+                </div>
+                <span class="text-[8px] font-bold text-neutral-500 uppercase tracking-wider">${b.name}</span>
+            `;
+            btn.title = `${b.name}${idx < 10 ? ` (${(idx + 1) % 10})` : ''}`;
+            btn.onclick = () => selectPaletteBlock(b.id);
+            paletteEl.appendChild(btn);
+        }
+        if (!visible.length) paletteEl.innerHTML = '<div class="text-[11px] text-neutral-600 px-2">No blocks match this filter.</div>';
+        syncPaletteActive();
+    }
+
+    function filterAssets(text) { assetFilter.search = text || ''; buildPalette(); }
+
+    buildAssetTabs();
+    buildPalette();
+
+    // ------------------------------------------- Selection / Outliner / Details --
+    function setSelected(cell) {
+        state.selected = cell || null;
+        if (cell) {
+            selHelper.box = new THREE.Box3(
+                new THREE.Vector3(cell.x, cell.y, cell.z),
+                new THREE.Vector3(cell.x + 1, cell.y + 1, cell.z + 1));
+            selHelper.visible = state.mode === 'EDIT';
+        } else {
+            selHelper.visible = false;
+        }
+        renderDetails();
+        highlightOutlinerRow();
+    }
+
+    /** Reposition the camera to frame a cell without changing its orientation. */
+    function focusCell(cell) {
+        const target = new THREE.Vector3(cell.x + 0.5, cell.y + 0.5, cell.z + 0.5);
+        const dir = new THREE.Vector3();
+        camera.getWorldDirection(dir);
+        camera.position.copy(target).addScaledVector(dir, -12);
+    }
+
+    function renderDetails() {
+        const el = document.getElementById('details-content');
+        if (!el) return;
+        if (!state.selected) {
+            el.innerHTML = '<div class="px-3 py-2 text-[11px] text-neutral-600">Nothing selected.<br>Use the Select tool (Q) or click a row in the outliner.</div>';
+            return;
+        }
+        const { x, y, z } = state.selected;
+        const id = World.voxels[`${x},${y},${z}`];
+        const def = id ? BLOCK_MAP.get(id) : null;
+        if (!def) {
+            el.innerHTML = '<div class="px-3 py-2 text-[11px] text-neutral-600">Selected cell is empty.</div>';
+            return;
+        }
+        const hex = '#' + def.color.toString(16).padStart(6, '0');
+        const flags = ['solid', 'climbable', 'slippery'].filter(f => def[f]).join(', ');
+        el.innerHTML = `
+            <div class="details-row"><span class="k">Name</span><span class="v" style="color:${hex}">${def.name}</span></div>
+            <div class="details-row"><span class="k">Category</span><span class="v">${def.category}</span></div>
+            <div class="details-row"><span class="k">Type</span><span class="v">${def.type}</span></div>
+            <div class="details-row"><span class="k">Position</span><span class="v">${x}, ${y}, ${z}</span></div>
+            <div class="details-row"><span class="k">Flags</span><span class="v">${flags || '&mdash;'}</span></div>
+            <div class="details-row"><span class="k">Opacity</span><span class="v">${def.opacity ?? 1}</span></div>
+            <div class="flex gap-1.5 px-2 pt-2">
+                <button class="details-btn" onclick="detailsFocus()">Focus (F)</button>
+                <button class="details-btn" onclick="detailsReplaceBlock()">Replace</button>
+                <button class="details-btn danger" onclick="detailsDeleteBlock()">Delete</button>
+            </div>`;
+    }
+
+    function detailsFocus() { if (state.selected) focusCell(state.selected); }
+    function detailsReplaceBlock() {
+        if (!state.selected || state.mode !== 'EDIT') return;
+        const { x, y, z } = state.selected;
+        Editor.begin();
+        World.setBlock(x, y, z, state.blockId);
+        Editor.commit();
+        renderDetails();
+        scheduleOutliner();
+    }
+    function detailsDeleteBlock() {
+        if (!state.selected || state.mode !== 'EDIT') return;
+        const { x, y, z } = state.selected;
+        Editor.begin();
+        World.removeBlock(x, y, z);
+        Editor.commit();
+        setSelected(null);
+        scheduleOutliner();
+    }
+
+    // World outliner: live scene contents grouped by block type. Clicking a
+    // row steps through that type's instances, selecting and framing each.
+    const outlinerCursor = {};
+    let outlinerSignature = null;
+    function buildOutliner(force) {
+        const list = document.getElementById('outliner-list');
+        if (!list) return;
+        const groups = new Map();
+        for (const id of Object.values(World.voxels)) groups.set(id, (groups.get(id) || 0) + 1);
+        const signature = [...groups.entries()].sort((a, b) => a[0] - b[0]).map(([id, n]) => `${id}:${n}`).join('|');
+        if (!force && signature === outlinerSignature) return;
+        outlinerSignature = signature;
+        const totalEl = document.getElementById('outliner-total');
+        if (totalEl) totalEl.textContent = `${Object.keys(World.voxels).length}`;
+        list.innerHTML = '';
+        const defs = [...groups.keys()].map(id => BLOCK_MAP.get(id)).filter(Boolean)
+            .sort((a, b) => a.name.localeCompare(b.name));
+        for (const def of defs) {
+            const row = document.createElement('div');
+            row.className = 'outliner-row';
+            row.dataset.blockId = def.id;
+            const hex = '#' + def.color.toString(16).padStart(6, '0');
+            row.innerHTML = `<span class="swatch" style="background:${hex}"></span>${def.name}<span class="count">${groups.get(def.id)}</span>`;
+            row.onclick = () => cycleOutliner(def.id);
+            list.appendChild(row);
+        }
+        highlightOutlinerRow();
+    }
+    function cycleOutliner(id) {
+        const keys = Object.keys(World.voxels).filter(k => World.voxels[k] === id);
+        if (!keys.length) return;
+        outlinerCursor[id] = ((outlinerCursor[id] ?? -1) + 1) % keys.length;
+        const [x, y, z] = keys[outlinerCursor[id]].split(',').map(Number);
+        setSelected({ x, y, z });
+        focusCell({ x, y, z });
+    }
+    function highlightOutlinerRow() {
+        const id = state.selected ? World.voxels[`${state.selected.x},${state.selected.y},${state.selected.z}`] : null;
+        document.querySelectorAll('.outliner-row').forEach(row =>
+            row.classList.toggle('active', id != null && +row.dataset.blockId === id));
+    }
+    function scheduleOutliner() { outlinerSignature = null; }
+
+    function updateStatusBar() {
+        UI.el['status-mode'].innerText = state.mode;
+        UI.el['status-tool'].innerText = state.tool;
+        UI.el['status-voxels'].innerText = Object.keys(World.voxels).length;
+        UI.el['status-draws'].innerText = renderer.lastDiagnostics.drawCalls;
+        UI.el['status-fps'].innerText = state.time.fps;
+    }
 
     // ----------------------------------------------------------------- Input --
     window.addEventListener('contextmenu', e => e.preventDefault());
@@ -1513,9 +1689,13 @@
             Settings.syncUI();
         }
         if (state.mode === 'EDIT' && !IS_EXPORTED) {
+            // Q selects only when not flying (RMB held), matching Unreal.
+            if (e.code === 'KeyQ' && !state.mouse.rightDown) setTool('select');
             if (e.code === 'KeyB') setTool('brush');
             if (e.code === 'KeyV') setTool('box');
             if (e.code === 'KeyX') setTool('eraser');
+            if (e.code === 'KeyF' && state.selected) focusCell(state.selected);
+            if ((e.code === 'Delete' || e.code === 'Backspace') && state.tool === 'select' && state.selected) detailsDeleteBlock();
             if (/^Digit\d$/.test(e.code)) {
                 const d = +e.code.slice(5);
                 selectPaletteIndex(d === 0 ? 9 : d - 1);
@@ -1547,6 +1727,12 @@
         }
 
         if (e.altKey) { eyedrop(); return; }
+
+        if (state.tool === 'select') {
+            const picked = pick();
+            setSelected(picked && !picked.isGround ? picked.erase : null);
+            return;
+        }
 
         const hit = pick();
         if (!hit) return;
@@ -1621,7 +1807,7 @@
             ghost.visible = false;
         } else if (hit) {
             boxHelper.visible = state.drag.active;
-            ghost.visible = true;
+            ghost.visible = state.tool !== 'select';
             const c = state.tool === 'eraser' ? hit.erase : hit.place;
             ghost.position.set(c.x + 0.5, c.y + 0.5, c.z + 0.5);
             ghost.material.color.setHex(state.tool === 'eraser' ? 0xff0000 : 0x3b82f6);
@@ -1657,15 +1843,19 @@
     // ------------------------------------------------------------- Main loop --
     function stepEditorCamera(dt) {
         const speed = (state.keys.ShiftLeft ? 28 : 12) * dt;
-        const dir = new THREE.Vector3();
-        camera.getWorldDirection(dir);
-        const right = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0, 1, 0)).normalize();
-        if (state.keys.KeyW) camera.position.addScaledVector(dir, speed);
-        if (state.keys.KeyS) camera.position.addScaledVector(dir, -speed);
-        if (state.keys.KeyD) camera.position.addScaledVector(right, speed);
-        if (state.keys.KeyA) camera.position.addScaledVector(right, -speed);
-        if (state.keys.KeyE) camera.position.y += speed;
-        if (state.keys.KeyQ) camera.position.y -= speed;
+        // WASD/QE fly only while the right mouse button is held (Unreal-style),
+        // leaving bare Q free for the Select tool.
+        if (state.mouse.rightDown) {
+            const dir = new THREE.Vector3();
+            camera.getWorldDirection(dir);
+            const right = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0, 1, 0)).normalize();
+            if (state.keys.KeyW) camera.position.addScaledVector(dir, speed);
+            if (state.keys.KeyS) camera.position.addScaledVector(dir, -speed);
+            if (state.keys.KeyD) camera.position.addScaledVector(right, speed);
+            if (state.keys.KeyA) camera.position.addScaledVector(right, -speed);
+            if (state.keys.KeyE) camera.position.y += speed;
+            if (state.keys.KeyQ) camera.position.y -= speed;
+        }
 
         const rotSpeed = 1.8 * dt;
         let rotated = false;
@@ -1726,6 +1916,7 @@
         if (now - lastFpsUpdate > 500) {
             state.time.fps = Math.round((frameCount * 1000) / (now - lastFpsUpdate));
             UI.el['fps-val'].innerText = state.time.fps;
+            if (!IS_EXPORTED) updateStatusBar();
             frameCount = 0;
             lastFpsUpdate = now;
         }
@@ -1895,12 +2086,12 @@
     // -------------------------------------------------------------- Tutorial --
     let tutorialStep = 0;
     const tutorialSteps = [
-        { target: null, title: 'Welcome to GamerKraft!', desc: 'This is your game studio. Fly with WASD + Q/E, look around by holding the right mouse button. Let\'s take a quick tour.' },
+        { target: null, title: 'Welcome to GamerKraft!', desc: 'This is your game studio. Hold the right mouse button to look around and fly with WASD + Q/E. Let\'s take a quick tour.' },
         { target: '#mode-controls', title: 'Game Modes', desc: 'Switch between EDITOR to build your world and PLAY to test it instantly. In play mode, click the world to capture your mouse, and click to shoot!' },
-        { target: '#tools-sidebar', title: 'Building Tools', desc: 'Brush (B) places blocks, Box (V) fills whole areas, Eraser (X) removes them. Alt-click any block to pick its type.' },
-        { target: '#block-palette', title: 'Block Palette', desc: 'Terrain, hazards, enemies, turrets, powerups, checkpoints and more. Press 1-9 to quick-select. Scroll to see everything.' },
+        { target: '#tools-sidebar', title: 'Building Tools', desc: 'Select (Q) inspects blocks, Brush (B) places, Box (V) fills areas, Eraser (X) removes. The mountain button generates a whole world.' },
+        { target: '#block-palette', title: 'Content Browser', desc: 'Every block, organized by category with live search. Press 1-9 to quick-select, or click a category tab to filter.' },
+        { target: '#right-panels', title: 'Outliner & Details', desc: 'The World Outliner lists everything in your scene — click a row to jump between instances. Details shows the selected block\'s properties with Focus, Replace, and Delete.' },
         { target: '#map-controls', title: 'Map Settings', desc: 'Need more space? Increase the map size — the engine\'s instanced renderer handles huge maps easily.' },
-        { target: '#btn-settings', title: 'Engine Settings', desc: 'Tune shadows, particles, field of view, view distance, camera mode and sound volume. Your preferences are saved automatically.' },
         { target: '#btn-publish', title: 'Publish', desc: 'When your game is ready, click Publish to download a fully standalone HTML file — engine included — that runs anywhere, even offline!' }
     ];
 
@@ -2002,6 +2193,12 @@ export function createRuntimeTarget() {
         window.addEventListener('beforeunload', () => autosave(true));
     }
 
+    renderDetails();
+    if (!IS_EXPORTED) {
+        buildOutliner(true);
+        setInterval(() => { if (state.mode === 'EDIT') buildOutliner(); }, 600);
+    }
+
     window.addEventListener('resize', () => {
         camera.aspect = window.innerWidth / window.innerHeight;
         camera.updateProjectionMatrix();
@@ -2010,11 +2207,13 @@ export function createRuntimeTarget() {
 
     const api = { World, Editor, Player, Entities, Particles, Sound, Settings, renderer, state, setMode, setTool, setMapSize, restartGame, PHYS, BLOCKS,
         Log, Console: DevConsole, generateWorld, Random: { createRng, toSeed },
+        setSelected, focusCell,
         input: { actions: actionMap, simulation: simulationInputs }, physics: { world: physicsWorld, query: physicsQuery } };
     window.GK = api;
     Object.assign(window, { undo, redo, toggleDebug, toggleSettings, setMode, setTool, setMapSize, zoomCamera,
         clearWorld, generateWorld, saveProjectFile, loadProjectFile, publishGame, startExportedGame, restartGame,
-        startTutorial, skipTutorial, nextTutorialStep });
+        startTutorial, skipTutorial, nextTutorialStep,
+        filterAssets, detailsFocus, detailsReplaceBlock, detailsDeleteBlock });
     mainLoop();
     return api;
 }
