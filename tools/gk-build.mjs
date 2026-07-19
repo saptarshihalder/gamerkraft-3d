@@ -73,7 +73,13 @@ async function deployBrowser(manifest) {
   await rm(browser, { recursive: true, force: true }); await mkdir(browser, { recursive: true });
   for (const name of ['index.html', 'src', 'vendor', 'assets']) await cp(path.join(root, name), path.join(browser, name), { recursive: true });
   await writeFile(path.join(browser, 'asset-manifest.json'), JSON.stringify(manifest, null, 2) + '\n');
-  await writeFile(path.join(browser, 'GamerKraft_Editor.html'), await buildStandaloneEditor());
+  const standalone = await buildStandaloneEditor();
+  await writeFile(path.join(browser, 'GamerKraft_Editor.html'), standalone);
+  // The deployed page is the same single inlined document: HTML and engine
+  // update atomically, so CDN/browser caches can never serve a mixed version
+  // (a stale page with a fresh module graph, or the reverse). src/ stays in
+  // the artifact for reference and direct module access.
+  await writeFile(path.join(browser, 'index.html'), standalone);
 }
 
 /**
