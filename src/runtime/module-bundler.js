@@ -60,6 +60,3 @@ export async function bundleModules(entry, { load, resolve, label = ref => ref }
     await visit(entry);
     return ordered.join('\n');
 }
-
-/** Boot expression appended after the flattened engine in standalone files. */
-export const STANDALONE_BOOT = '(window.EXPORTED_WORLD ? createRuntimeTarget : createEditorTarget)();';

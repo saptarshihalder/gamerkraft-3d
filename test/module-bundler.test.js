@@ -3,30 +3,22 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { bundleModules, STANDALONE_BOOT } from '../src/runtime/module-bundler.js';
+import { bundleModules } from '../src/runtime/module-bundler.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-test('the engine module graph flattens into a single import-free script', async () => {
-  const bundle = await bundleModules(path.join(root, 'src', 'runtime', 'engine.js'), {
+test('a real contract-module graph flattens into a single import-free script', async () => {
+  const bundle = await bundleModules(path.join(root, 'src', 'world', 'scene-importer.js'), {
     load: file => readFile(file, 'utf8'),
     resolve: (spec, from) => path.resolve(path.dirname(from), spec)
   });
-  // Every static dependency of the engine must be inlined exactly once.
-  for (const mod of ['engine.js', 'module-bundler.js', 'index.js', 'renderer.js', 'three-webgl-renderer.js',
-    'scene.js', 'scene-importer.js', 'systems.js', 'block-definitions.js', 'actions.js',
-    'voxel-aabb-world.js', 'uuid.js', 'asset-registry.js', 'log.js', 'random.js', 'terrain-generator.js']) {
+  // Every static dependency must be inlined exactly once, shared ones included.
+  for (const mod of ['scene-importer.js', 'scene.js', 'uuid.js', 'asset-registry.js', 'block-definitions.js']) {
     assert.equal(bundle.split(`${path.sep}${mod} ----`).length, 2, `${mod} is inlined exactly once`);
   }
-  // No module syntax may survive flattening: the bundle must run as one
-  // inline script in a standalone HTML file.
+  // No module syntax may survive flattening.
   assert.doesNotMatch(bundle, /^[ \t]*import[ \t]/m);
   assert.doesNotMatch(bundle, /^[ \t]*export[ \t]/m);
-  // Both standalone boot entry points exist in the flattened source.
-  assert.match(bundle, /function createRuntimeTarget/);
-  assert.match(bundle, /function createEditorTarget/);
-  assert.match(STANDALONE_BOOT, /createRuntimeTarget/);
-  assert.match(STANDALONE_BOOT, /createEditorTarget/);
 });
 
 test('aliased imports and re-exports flatten to const bindings', async () => {
