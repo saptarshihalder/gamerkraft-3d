@@ -69,7 +69,39 @@ src/editor/           UI kit, editor core (history, gizmo, tools, PIE), panels, 
 vendor/               three.js r128 (wrapped for the registry), lucide icons (editor only)
 ```
 
+`src/assets`, `src/core/{asset-registry,log,random,uuid}.js`, `src/input`, `src/physics`,
+`src/render/{contracts,renderer,three-webgl-renderer}.js`, `src/audio`, `src/network` and
+`src/world` are backend-neutral ES modules (renderer/physics/input/network contracts, UUID asset
+registry, seeded RNG, structured log, scene format) covered by the Node test suite. The v3
+editor does not use them yet; see [ARCHITECTURE.md](ARCHITECTURE.md).
+
 The console API is exposed as `window.GK` (e.g. `GK.editor`, `GK.App`, `GK.World`).
+
+## Development
+
+No build step is needed. The editor is plain `<script>` files, so `index.html` works over
+http(s) and when opened directly from disk:
+
+```bash
+python3 -m http.server 8000   # then open http://localhost:8000
+```
+
+| Command | What it does |
+| --- | --- |
+| `npm test` | Node unit tests (`test/*.test.js`) |
+| `npm run lint` | Syntax-checks every source and tool file |
+| `npm run format:check` | Prettier check for config, workflows, docs and browser tests |
+| `npm run build` | Validates and cooks `assets/`, writes `dist/browser/` including `GamerKraft_Editor.html`, a single-file offline editor |
+| `npm run test:smoke` | Playwright smoke tests against `dist/browser` (set `GK_CHROMIUM` to use a system Chromium) |
+
+Contribution workflow, release process and history: [CONTRIBUTING.md](CONTRIBUTING.md),
+[RELEASES.md](RELEASES.md), [CHANGELOG.md](CHANGELOG.md), [ROADMAP.md](ROADMAP.md).
+
+## Deployment
+
+Pushes to `main` run the quality gate, then deploy `dist/browser` to GitHub Pages
+(`.github/workflows/pages.yml`). The deployed `index.html` is the single-file editor, so the
+page and engine always update atomically.
 
 ## Save format
 

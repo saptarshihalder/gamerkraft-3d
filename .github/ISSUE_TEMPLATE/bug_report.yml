@@ -1,0 +1,25 @@
+name: Bug report
+description: Report reproducible behavior that differs from expectations.
+title: "bug: "
+labels: [bug]
+body:
+  - type: textarea
+    attributes:
+      label: What happened?
+      description: Include expected and actual behavior.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Reproduction steps
+      placeholder: |
+        1. Open …
+        2. …
+    validations:
+      required: true
+  - type: input
+    attributes:
+      label: Environment
+      description: Browser, operating system, and GamerKraft version or commit.
+    validations:
+      required: true
