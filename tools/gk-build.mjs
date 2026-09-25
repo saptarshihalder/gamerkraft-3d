@@ -4,7 +4,6 @@ import { cp, mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promi
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { bundleModules, STANDALONE_BOOT } from '../src/runtime/module-bundler.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const assetsRoot = path.join(root, 'assets');
@@ -71,7 +70,7 @@ async function cook(asset) {
 async function deployBrowser(manifest) {
   const browser = path.join(distRoot, 'browser');
   await rm(browser, { recursive: true, force: true }); await mkdir(browser, { recursive: true });
-  for (const name of ['index.html', 'src', 'vendor', 'assets']) await cp(path.join(root, name), path.join(browser, name), { recursive: true });
+  for (const name of ['index.html', 'css', 'src', 'vendor', 'assets']) await cp(path.join(root, name), path.join(browser, name), { recursive: true });
   await writeFile(path.join(browser, 'asset-manifest.json'), JSON.stringify(manifest, null, 2) + '\n');
   const standalone = await buildStandaloneEditor();
   await writeFile(path.join(browser, 'GamerKraft_Editor.html'), standalone);
@@ -83,26 +82,24 @@ async function deployBrowser(manifest) {
 }
 
 /**
- * A double-clickable single-file editor: index.html with the vendors and the
- * flattened engine inline. It boots (and publishes) entirely from file://.
+ * A double-clickable single-file editor: index.html with the stylesheet and
+ * every classic <script src> inlined. It boots (and packages games) from file://.
  */
 async function buildStandaloneEditor() {
-  const escapeScript = js => js.replace(/<\/script/gi, '<\\/script');
+  const escapeScript = js => js.replace(/<\/script/gi, '<\\/script').replace(/<!--/g, '<\\!--');
   let html = await readFile(path.join(root, 'index.html'), 'utf8');
-  for (const src of ['vendor/tailwind.js', 'vendor/lucide.min.js', 'vendor/three.min.js']) {
-    const tag = `<script src="${src}"></script>`;
-    if (!html.includes(tag)) fail(`index.html no longer references ${src}; update the standalone editor build.`);
+  const css = /<link rel="stylesheet" href="([^"]+)">/g;
+  for (const [tag, href] of [...html.matchAll(css)]) {
+    const text = await readFile(path.join(root, href), 'utf8');
+    html = html.replace(tag, () => `<style>${text.replace(/<\/style/gi, '<\\/style')}</style>`);
+  }
+  const scripts = [...html.matchAll(/<script src="([^"]+)"><\/script>/g)];
+  if (!scripts.some(([, src]) => src === 'src/boot.js')) fail('index.html no longer loads src/boot.js; update the standalone editor build.');
+  for (const [tag, src] of scripts) {
     const js = escapeScript(await readFile(path.join(root, src), 'utf8'));
     html = html.replace(tag, () => `<script>${js}</script>`);
   }
-  const appTag = '<script type="module" src="src/main.js"></script>';
-  if (!html.includes(appTag)) fail('index.html no longer references src/main.js; update the standalone editor build.');
-  const bundle = escapeScript(await bundleModules(path.join(root, 'src', 'runtime', 'engine.js'), {
-    load: file => readFile(file, 'utf8'),
-    resolve: (spec, from) => path.resolve(path.dirname(from), spec),
-    label: rel
-  }));
-  return html.replace(appTag, () => `<script type="module">${bundle}\n${STANDALONE_BOOT}</script>`);
+  return html;
 }
 try {
   const assets = await loadAssets();

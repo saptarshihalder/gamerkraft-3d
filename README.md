@@ -1,163 +1,110 @@
-# GamerKraft 3D Engine
+# GamerKraft Engine 3
 
-A browser-based voxel game engine and level editor. Build 3D platformer levels,
-playtest them instantly, and publish them as fully standalone HTML files that run
-anywhere — even offline.
+A browser-native 3D game engine and level editor with an Unreal Engine–style workflow.
+Build levels from voxels and actors, script gameplay, play-test in the viewport,
+and package a **single offline HTML file** that runs on desktop and mobile.
 
-**`index.html` is now only the browser entry point.** The application is composed from native ES modules in `src/` (plus vendored libraries), with no build step required.
+No build step, no server: open `index.html`.
 
-An honest audit of where the engine stands against the full AAA-engine
-component map — and the web-first strategy that follows from it — lives in
-[PARITY.md](PARITY.md).
+## Editor
 
-## Features
+Layout follows Unreal Engine 5: menu bar, toolbar with mode selector and Play/Pause/Stop,
+**Place Actors** / mode panel, **Viewport** with overlay toolbars (view, view mode, show flags,
+transform tools, snapping, camera speed, axis widget, stats), **Outliner**, **Details** /
+**World Settings**, and a bottom dock with **Content Browser**, **Output Log** and **Level Script**.
+Status bar has a console (`help`).
 
-### Editor
+- **Modes** — Selection (place/transform actors), Build (voxels), Landscape (sculpt + procedural terrain), Foliage (GPU-instanced painting)
+- **Transform gizmo** — move (axes + ground plane), rotate, scale; grid/rotation/scale snapping
+- **Build tools** — brush (cube/sphere, size 1–9, plane-locked strokes), box (solid / hollow / walls, add / remove / replace), erase, paint, flood fill, eyedropper
+- **Landscape** — raise, lower, flatten, smooth, paint; fBm terrain generator with 5 biomes (temperate, desert, snow, tropical island, volcanic)
+- **Undo/redo** — transactional history for blocks, actors, settings, script and map size (100 steps)
+- **Project Browser** — 8 templates with live-rendered thumbnails; multiple projects saved in the browser with autosave
+- **Play In Editor** — play-test in the viewport; the level is restored exactly on stop. *Play From Here* via right-click
+- **Map Check**, copy/paste, duplicate, snap-to-floor, top orthographic view, lit/unlit/wireframe, guided tour
 
-- **Unreal-style editor shell** — World Outliner with live per-type counts and
-  jump-to-instance, Details inspector (Focus / Replace / Delete), Content
-  Browser with category tabs and live search, and a status bar with live
-  engine stats
-- **Fly camera** — hold right mouse to look and fly with WASD + Q/E
-  (Unreal-style), arrow keys rotate, scroll wheel dollies
-- **Tools** — Select (`Q`) with highlight, `F` to focus, `Del` to delete;
-  Brush (`B`) with click-drag painting, Box fill (`V`), area Eraser (`X`),
-  Alt/middle-click eyedropper
-- **22 block types** — terrain, glass, ice (slippery), ladders (climbable), water, lava, trees, spikes, jump/speed pads, coins, gems, enemy spawners, turrets, jetpack pickups, checkpoints, start/goal markers
-- **Delta-based undo/redo** (`Ctrl+Z` / `Ctrl+Y`, 50 levels) — each stroke, box fill, clear, or map resize is one undoable action
-- **Quick-select** — number keys `1`–`0` pick palette slots
-- **Resizable maps** up to 200×200; shrinking prunes out-of-bounds blocks as an undoable action
-- **Autosave** — the world persists to `localStorage` every 15 s and on tab close
-- **Save / Load** project JSON files (backwards compatible with v1 saves)
-- **Procedural world generator** — deterministic seeded terrain with hills, water,
-  trees, collectibles, and a guaranteed start/goal (mountain button, or
-  `generate <seed>` in the console); one undoable action
-- **Developer console** (`` ` `` key) — `help`, `stats`, `log`, `generate`,
-  `mapsize`, `mode`, and play-mode cheats (`tp`, `heal`, `give jetpack`);
-  backed by a structured, categorized engine log (`GK.Log`)
-- Interactive tutorial, debug overlay (position, draw calls, triangles, FPS), compass
+### Templates
+Blank · Third Person Platformer · First Person Arena · Parkour Tower (Obby) · Coin Rush · Dungeon Crawler (procedural maze, keys & doors) · Survival Island · Sandbox Builder
 
-### Play mode
+## Engine
 
-- Third- or first-person camera (toggle with `C`), pointer-lock mouse look
-- Fixed-timestep physics (60 Hz) with swept AABB voxel collision — frame-rate independent
-- Jumping with coyote time, sprinting, swimming, ladder climbing, ice friction, lava, void death
-- 3-heart health with invulnerability frames and knockback; checkpoints set your respawn
-- Enemies that chase and avoid walls, turrets with per-unit fire cooldowns, and click-to-shoot combat (+50 per kill)
-- Coins (+100), gems (+500), jetpack pickup (hold SPACE to fly)
-- Score, coin counter, level timer, hearts, and FPS in the HUD
-- Procedural WebAudio sound effects and an instanced particle system (no assets)
+- **Rendering** — three.js r128, chunked voxel meshing (16³) with hidden-face culling and baked per-vertex ambient occlusion; 42 blocks with procedural shader materials (no textures); PBR lighting, ACES tone mapping, soft shadows that follow the camera, dynamic sky with sun, stars and clouds, time of day, 8 sky presets, a pooled point-light system, instanced particles, GPU-instanced foliage
+- **Actors (35 types)** — player start, goal, checkpoints, jump/speed pads, teleporters, moving and crumbling platforms, keyed doors, trigger volumes, signs, coins, gems, health, keys, jetpack, double jump, spikes, saws, 4 enemy behaviours, turrets, enemy spawners, point lights, torches, crates, explosive barrels, trees, rocks, bushes, flowers, grass
+- **Gameplay** — fixed 60 Hz physics with swept AABB collision against voxels and moving colliders; coyote time, jump buffering, variable jump height, sprint, swimming, ladders, ice, slime bounce, lava; health, lives, knockback, stomp attacks, shooting, in-game building with a hotbar; 5 win conditions (reach goal, collect all, defeat all, survive, sandbox) with optional time limits
+- **Input** — keyboard + mouse (pointer lock), gamepad, touch controls on mobile
+- **Audio** — procedural sound effects and 4 generative music tracks (WebAudio, no assets)
+- **HUD** — health, lives, score, coins, timer, objective, keys, jetpack fuel, minimap, pause menu with settings, victory/defeat screens with best times
 
-### Engine internals
+## Level scripting
 
-- **Instanced rendering** — plain cubes are drawn through per-type `InstancedMesh`
-  pools (one draw call per block type). A 10,000-block map renders in ~20 draw
-  calls and builds in ~15 ms. Special shapes (trees, coins, gems, turrets, spikes)
-  are individual meshes with shared geometries/materials — nothing is ever
-  re-allocated or disposed per block.
-- **Fixed-timestep simulation** with an accumulator; rendering interpolates the camera.
-- **Semantic simulation boundaries** — action maps (`Move`, `Jump`, `Interact`), tick-indexed replay inputs, physics queries, audio sources/mixers, and authority-aware replication contracts are backend independent. The current voxel AABB backend remains the default implementation.
-- **Settings panel** — shadows, particles, volume, FOV, view distance, camera mode; persisted to `localStorage`.
-- **Publisher** — inlines the vendored libraries, the flattened engine module
-  graph, and the serialized world into one self-contained HTML file that runs
-  anywhere, even opened from `file://` with no internet.
+Each level has a JavaScript Level Script that runs when play starts:
 
-## Controls
+```js
+on('coin', () => { if (game.coins === game.coinsTotal) hud.message('All coins!', 3); });
+on('trigger:bossRoom', () => spawn('enemy', 0, 5, 0, { variant: 'flyer', health: 5 }));
+every(30, () => hud.message('Time left: ' + Math.round(120 - game.time), 2));
+```
 
-| Context | Keys                                                                                                                                                                     |
-| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Editor  | Hold RMB + `WASD`/`Q`/`E` fly & look, wheel dolly, `Q` select, `F` focus, `Del` delete, `B`/`V`/`X` tools, `1`–`0` palette, `Ctrl+Z`/`Y` undo/redo, Alt-click eyedropper |
-| Play    | `WASD` move, `SPACE` jump/climb/jetpack, `Shift` sprint/descend, mouse look (click to capture), click shoot, `C` camera toggle                                           |
+The full API is listed beside the editor in the Level Script tab. Runtime errors appear in
+the Output Log with line numbers.
 
-## Project structure
+## Packaging
 
-- `src/core/` — composition root that selects an editor or runtime target.
-- `src/runtime/` — engine implementation plus save/export interfaces.
-- `src/editor/`, `src/render/`, `src/physics/`, `src/assets/`, and `src/ui/` — explicit subsystem boundaries and public interfaces.
-- `index.html` — browser markup and the single `src/main.js` module entry point.
+**Platforms ▸ Package Project** produces one self-contained `.html` file: the runtime
+modules, three.js and your level. It runs offline, including from `file://`. Every module
+is registered as a function, and the packager rebuilds the runtime from each function's
+source text (`Function#toString`), so packaging needs no network or file access. Editor code
+is excluded from packaged games.
+
+## Project layout
+
+```
+index.html            editor shell
+css/editor.css        UE5-style dark theme
+src/boot.js           module registry + bundler
+src/core/             util, blocks, world (chunks, raycast, serialization), actors
+src/render/           voxel shader, mesher, sky, engine (renderer, world view, particles)
+src/runtime/          input/audio/physics, HUD, game session + scripting, standalone player
+src/editor/           UI kit, editor core (history, gizmo, tools, PIE), panels, templates, app
+vendor/               three.js r128 (wrapped for the registry), lucide icons (editor only)
+```
+
+`src/assets`, `src/core/{asset-registry,log,random,uuid}.js`, `src/input`, `src/physics`,
+`src/render/{contracts,renderer,three-webgl-renderer}.js`, `src/audio`, `src/network` and
+`src/world` are backend-neutral ES modules (renderer/physics/input/network contracts, UUID asset
+registry, seeded RNG, structured log, scene format) covered by the Node test suite. The v3
+editor does not use them yet; see [ARCHITECTURE.md](ARCHITECTURE.md).
+
+The console API is exposed as `window.GK` (e.g. `GK.editor`, `GK.App`, `GK.World`).
 
 ## Development
 
-No build step needed for development. Serve the repo root and open `index.html`
-(browsers block ES modules on `file://`, so double-clicking `index.html` shows
-a notice instead of the editor):
+No build step is needed. The editor is plain `<script>` files, so `index.html` works over
+http(s) and when opened directly from disk:
 
 ```bash
-python3 -m http.server 8000
-# open http://localhost:8000
+python3 -m http.server 8000   # then open http://localhost:8000
 ```
 
-For a double-clickable editor that needs no server, `npm run build` produces
-`dist/browser/GamerKraft_Editor.html` — a single file with the engine and all
-libraries inlined. It boots and publishes games entirely offline.
+| Command | What it does |
+| --- | --- |
+| `npm test` | Node unit tests (`test/*.test.js`) |
+| `npm run lint` | Syntax-checks every source and tool file |
+| `npm run format:check` | Prettier check for config, workflows, docs and browser tests |
+| `npm run build` | Validates and cooks `assets/`, writes `dist/browser/` including `GamerKraft_Editor.html`, a single-file offline editor |
+| `npm run test:smoke` | Playwright smoke tests against `dist/browser` (set `GK_CHROMIUM` to use a system Chromium) |
 
-Dependencies (Three.js r128, Tailwind, Lucide) are vendored in `vendor/` — the
-app works fully offline and versions are pinned.
-
-A public scripting/testing API is exposed as `window.GK`:
-
-```js
-GK.World.setBlock(0, 1, 0, 12); // place a coin
-GK.setMode("PLAY"); // start playtesting
-GK.state.player.pos; // live player position
-```
-
-### Scene save format
-
-```json
-{
-  "version": 3,
-  "id": "scene-uuid",
-  "assets": [
-    {
-      "id": "asset-uuid",
-      "type": "block-catalog",
-      "uri": "gamerkraft://assets/blocks"
-    }
-  ],
-  "entities": [
-    {
-      "id": "entity-uuid",
-      "parentId": null,
-      "transform": {
-        "position": [0, 0, 0],
-        "rotation": [0, 0, 0, 1],
-        "scale": [1, 1, 1]
-      },
-      "components": {
-        "Terrain": {
-          "type": "terrain",
-          "mapSize": 20,
-          "voxels": { "x,y,z": 1 },
-          "blockCatalogAssetId": "asset-uuid"
-        }
-      }
-    }
-  ]
-}
-```
-
-Scene and asset identifiers are UUIDs. Meshes, physics bodies, audio nodes, and
-other backend state are rebuilt from component payloads and are not serialized.
-Legacy v1/v2 `{ mapSize, voxels }` saves are imported automatically.
-
-### Future work
-
-- Greedy meshing / hidden-face culling to cut triangle counts further on huge maps
-- Voxel DDA raycast for picking (replaces instanced-mesh raycasts)
-- Behavior scripting for blocks and entities
+Contribution workflow, release process and history: [CONTRIBUTING.md](CONTRIBUTING.md),
+[RELEASES.md](RELEASES.md), [CHANGELOG.md](CHANGELOG.md), [ROADMAP.md](ROADMAP.md).
 
 ## Deployment
 
-Pushes to `main` deploy the built site (including the offline editor file) to
-GitHub Pages via `.github/workflows/pages.yml`.
+Pushes to `main` run the quality gate, then deploy `dist/browser` to GitHub Pages
+(`.github/workflows/pages.yml`). The deployed `index.html` is the single-file editor, so the
+page and engine always update atomically.
 
-### Rendering architecture
+## Save format
 
-`src/render/` owns the graphics-device boundary. Runtime code advances a frame
-with `beginFrame()`, `submitScene()`, and `endFrame()` and reads draw statistics
-through `getDiagnostics()`. The current `ThreeWebGLRenderer` maps the ordered
-shadow, opaque, transparent, post-process, and UI pass contract to Three.js's
-WebGL scheduler. Texture, mesh, material, and shader resources are represented
-by opaque `AssetHandle`s. WebGPU, Vulkan, and desktop-native renderers remain
-future backend implementations of the same `Renderer` interface.
+Projects are JSON (`.gkproj`): `{ format, version: 3, meta, world: { size, height, chunks }, actors, settings, script }`.
+Chunks are run-length encoded, base64 16³ voxel arrays. Levels from GamerKraft v1/v2 are
+imported and migrated automatically (File ▸ Import, or the v2 browser autosave on first launch).
