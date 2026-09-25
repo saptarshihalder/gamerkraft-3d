@@ -1,84 +1,78 @@
-# GamerKraft 3D Engine
+# GamerKraft Engine 3
 
-A browser-based voxel game engine and level editor. Build 3D platformer levels,
-playtest them instantly, and publish them as fully standalone HTML files that run
-anywhere — even offline.
+A browser-native 3D game engine and level editor with an Unreal Engine–style workflow.
+Build levels from voxels and actors, script gameplay, play-test in the viewport,
+and package a **single offline HTML file** that runs on desktop and mobile.
 
-**Everything ships in a single `index.html`** (plus vendored libraries), deployed
-automatically to GitHub Pages.
+No build step, no server: open `index.html`.
 
-## Features
+## Editor
 
-### Editor
-- **Fly camera** — WASD + Q/E to fly, hold right mouse to look, arrow keys also rotate, scroll wheel to dolly
-- **Tools** — Brush (`B`) with click-drag painting, Box fill (`V`), area Eraser (`X`), Alt/middle-click eyedropper
-- **22 block types** — terrain, glass, ice (slippery), ladders (climbable), water, lava, trees, spikes, jump/speed pads, coins, gems, enemy spawners, turrets, jetpack pickups, checkpoints, start/goal markers
-- **Delta-based undo/redo** (`Ctrl+Z` / `Ctrl+Y`, 50 levels) — each stroke, box fill, clear, or map resize is one undoable action
-- **Quick-select** — number keys `1`–`0` pick palette slots
-- **Resizable maps** up to 200×200; shrinking prunes out-of-bounds blocks as an undoable action
-- **Autosave** — the world persists to `localStorage` every 15 s and on tab close
-- **Save / Load** project JSON files (backwards compatible with v1 saves)
-- Interactive tutorial, debug overlay (position, draw calls, triangles, FPS), compass
+Layout follows Unreal Engine 5: menu bar, toolbar with mode selector and Play/Pause/Stop,
+**Place Actors** / mode panel, **Viewport** with overlay toolbars (view, view mode, show flags,
+transform tools, snapping, camera speed, axis widget, stats), **Outliner**, **Details** /
+**World Settings**, and a bottom dock with **Content Browser**, **Output Log** and **Level Script**.
+Status bar has a console (`help`).
 
-### Play mode
-- Third- or first-person camera (toggle with `C`), pointer-lock mouse look
-- Fixed-timestep physics (60 Hz) with swept AABB voxel collision — frame-rate independent
-- Jumping with coyote time, sprinting, swimming, ladder climbing, ice friction, lava, void death
-- 3-heart health with invulnerability frames and knockback; checkpoints set your respawn
-- Enemies that chase and avoid walls, turrets with per-unit fire cooldowns, and click-to-shoot combat (+50 per kill)
-- Coins (+100), gems (+500), jetpack pickup (hold SPACE to fly)
-- Score, coin counter, level timer, hearts, and FPS in the HUD
-- Procedural WebAudio sound effects and an instanced particle system (no assets)
+- **Modes** — Selection (place/transform actors), Build (voxels), Landscape (sculpt + procedural terrain), Foliage (GPU-instanced painting)
+- **Transform gizmo** — move (axes + ground plane), rotate, scale; grid/rotation/scale snapping
+- **Build tools** — brush (cube/sphere, size 1–9, plane-locked strokes), box (solid / hollow / walls, add / remove / replace), erase, paint, flood fill, eyedropper
+- **Landscape** — raise, lower, flatten, smooth, paint; fBm terrain generator with 5 biomes (temperate, desert, snow, tropical island, volcanic)
+- **Undo/redo** — transactional history for blocks, actors, settings, script and map size (100 steps)
+- **Project Browser** — 8 templates with live-rendered thumbnails; multiple projects saved in the browser with autosave
+- **Play In Editor** — play-test in the viewport; the level is restored exactly on stop. *Play From Here* via right-click
+- **Map Check**, copy/paste, duplicate, snap-to-floor, top orthographic view, lit/unlit/wireframe, guided tour
 
-### Engine internals
-- **Instanced rendering** — plain cubes are drawn through per-type `InstancedMesh`
-  pools (one draw call per block type). A 10,000-block map renders in ~20 draw
-  calls and builds in ~15 ms. Special shapes (trees, coins, gems, turrets, spikes)
-  are individual meshes with shared geometries/materials — nothing is ever
-  re-allocated or disposed per block.
-- **Fixed-timestep simulation** with an accumulator; rendering interpolates the camera.
-- **Settings panel** — shadows, particles, volume, FOV, view distance, camera mode; persisted to `localStorage`.
-- **Publisher** — inlines the vendored libraries and the serialized world into one
-  self-contained HTML file (with CDN fallback when building from `file://`).
+### Templates
+Blank · Third Person Platformer · First Person Arena · Parkour Tower (Obby) · Coin Rush · Dungeon Crawler (procedural maze, keys & doors) · Survival Island · Sandbox Builder
 
-## Controls
+## Engine
 
-| Context | Keys |
-|---|---|
-| Editor | `WASD` + `Q`/`E` fly, right-drag look, wheel dolly, `B`/`V`/`X` tools, `1`–`0` palette, `Ctrl+Z`/`Y` undo/redo, Alt-click eyedropper |
-| Play | `WASD` move, `SPACE` jump/climb/jetpack, `Shift` sprint/descend, mouse look (click to capture), click shoot, `C` camera toggle |
+- **Rendering** — three.js r128, chunked voxel meshing (16³) with hidden-face culling and baked per-vertex ambient occlusion; 42 blocks with procedural shader materials (no textures); PBR lighting, ACES tone mapping, soft shadows that follow the camera, dynamic sky with sun, stars and clouds, time of day, 8 sky presets, a pooled point-light system, instanced particles, GPU-instanced foliage
+- **Actors (35 types)** — player start, goal, checkpoints, jump/speed pads, teleporters, moving and crumbling platforms, keyed doors, trigger volumes, signs, coins, gems, health, keys, jetpack, double jump, spikes, saws, 4 enemy behaviours, turrets, enemy spawners, point lights, torches, crates, explosive barrels, trees, rocks, bushes, flowers, grass
+- **Gameplay** — fixed 60 Hz physics with swept AABB collision against voxels and moving colliders; coyote time, jump buffering, variable jump height, sprint, swimming, ladders, ice, slime bounce, lava; health, lives, knockback, stomp attacks, shooting, in-game building with a hotbar; 5 win conditions (reach goal, collect all, defeat all, survive, sandbox) with optional time limits
+- **Input** — keyboard + mouse (pointer lock), gamepad, touch controls on mobile
+- **Audio** — procedural sound effects and 4 generative music tracks (WebAudio, no assets)
+- **HUD** — health, lives, score, coins, timer, objective, keys, jetpack fuel, minimap, pause menu with settings, victory/defeat screens with best times
 
-## Development
+## Level scripting
 
-No build step. Serve the repo root and open `index.html`:
-
-```bash
-python3 -m http.server 8000
-# open http://localhost:8000
-```
-
-Dependencies (Three.js r128, Tailwind, Lucide) are vendored in `vendor/` — the
-app works fully offline and versions are pinned.
-
-A public scripting/testing API is exposed as `window.GK`:
+Each level has a JavaScript Level Script that runs when play starts:
 
 ```js
-GK.World.setBlock(0, 1, 0, 12)   // place a coin
-GK.setMode('PLAY')               // start playtesting
-GK.state.player.pos              // live player position
+on('coin', () => { if (game.coins === game.coinsTotal) hud.message('All coins!', 3); });
+on('trigger:bossRoom', () => spawn('enemy', 0, 5, 0, { variant: 'flyer', health: 5 }));
+every(30, () => hud.message('Time left: ' + Math.round(120 - game.time), 2));
 ```
 
-### Save format
+The full API is listed beside the editor in the Level Script tab. Runtime errors appear in
+the Output Log with line numbers.
 
-```json
-{ "version": 2, "mapSize": 20, "voxels": { "x,y,z": blockId } }
+## Packaging
+
+**Platforms ▸ Package Project** produces one self-contained `.html` file: the runtime
+modules, three.js and your level. It runs offline, including from `file://`. Every module
+is registered as a function, and the packager rebuilds the runtime from each function's
+source text (`Function#toString`), so packaging needs no network or file access. Editor code
+is excluded from packaged games.
+
+## Project layout
+
+```
+index.html            editor shell
+css/editor.css        UE5-style dark theme
+src/boot.js           module registry + bundler
+src/core/             util, blocks, world (chunks, raycast, serialization), actors
+src/render/           voxel shader, mesher, sky, engine (renderer, world view, particles)
+src/runtime/          input/audio/physics, HUD, game session + scripting, standalone player
+src/editor/           UI kit, editor core (history, gizmo, tools, PIE), panels, templates, app
+vendor/               three.js r128 (wrapped for the registry), lucide icons (editor only)
 ```
 
-### Future work
-- Greedy meshing / hidden-face culling to cut triangle counts further on huge maps
-- Voxel DDA raycast for picking (replaces instanced-mesh raycasts)
-- Behavior scripting for blocks and entities
+The console API is exposed as `window.GK` (e.g. `GK.editor`, `GK.App`, `GK.World`).
 
-## Deployment
+## Save format
 
-Pushes to `main` deploy to GitHub Pages via `.github/workflows/static.yml`.
+Projects are JSON (`.gkproj`): `{ format, version: 3, meta, world: { size, height, chunks }, actors, settings, script }`.
+Chunks are run-length encoded, base64 16³ voxel arrays. Levels from GamerKraft v1/v2 are
+imported and migrated automatically (File ▸ Import, or the v2 browser autosave on first launch).
