@@ -4,6 +4,28 @@ All notable changes to GamerKraft 3D are documented here. The format follows [Ke
 
 ## [Unreleased]
 
+### Changed (breaking)
+
+- The editor is now GamerKraft Engine 3, a rewrite with an Unreal Engine 5-style workflow. It replaces the previous single-page editor (`src/main.js`, `src/runtime/engine.js` and its targets). The `window.GK` API changed: use `GK.editor`, `GK.App`, `GK.World` and `GK.editor.pie.game`.
+- Projects are saved as v3 `.gkproj` JSON (chunked voxels, actors, settings, script). v1/v2 worlds, including the v2 browser autosave, are migrated automatically on import.
+- Tailwind CSS and Google Fonts are no longer dependencies; `vendor/three.min.js` is now `vendor/three.gk.js`, wrapped for the module registry.
+
+### Added
+
+- Editor modes (Selection, Build, Landscape, Foliage), a move/rotate/scale gizmo with snapping, and block tools (brush, box, erase, paint, flood fill, eyedropper).
+- Terrain sculpting and a procedural terrain generator with five biomes.
+- Transactional undo/redo, Play In Editor with exact level rollback, Play From Here, Map Check, a top orthographic view, and lit/unlit/wireframe view modes.
+- A Project Browser with eight templates (Blank, Third Person Platformer, First Person Arena, Parkour Tower, Coin Rush, Dungeon Crawler, Survival Island, Sandbox Builder), multi-project storage and autosave.
+- Rendering: chunked voxel meshing with baked ambient occlusion, 42 procedurally shaded blocks, a dynamic sky with time of day, pooled point lights and GPU-instanced foliage.
+- Gameplay: 35 actor types (enemies, turrets, spawners, platforms, keyed doors, teleporters, trigger volumes and more), fixed-step physics, a HUD with minimap, gamepad and touch input, and procedural audio and music.
+- A Level Script API with runtime error reporting in the Output Log.
+- Single-file offline packaging. The runtime is rebuilt from the module registry, so packaging also works from `file://`.
+- `npm run lint` now syntax-checks every file in `src/` and `tools/`. New unit tests cover the v3 core, and the browser smoke tests now target the v3 editor.
+
+### Removed
+
+- The previous editor application and its standalone boot expression (`STANDALONE_BOOT`). The backend-neutral contract modules (renderer, input, physics, network, assets, scene, log, RNG, UUID) and the ES-module bundler are kept and still tested.
+
 ### Added
 
 - Unreal-style editor shell: World Outliner (live per-type counts, click to jump between instances), Details inspector with Focus/Replace/Delete, a Select tool (`Q`) with selection highlight, `F` camera focus, `Del` to delete, Content Browser with category tabs and live search, a status bar with live engine stats, and a graphite professional theme.
