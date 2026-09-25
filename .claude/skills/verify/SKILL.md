@@ -1,53 +1,32 @@
-# Verify GamerKraft 3D Engine
+# Verify GamerKraft Engine
 
-Single-file browser app (`index.html`, no build step). Verify by driving it in
-headless Chromium.
-
-## Launch
+Static app (no build). Serve the repo root and drive it in headless Chromium.
 
 ```bash
-cd <repo-root>
-python3 -m http.server 8931 --bind 127.0.0.1 &   # serve repo root
+python3 -m http.server 8931 --bind 127.0.0.1 &   # from repo root
 ```
 
-Playwright must use the pre-installed browser (version mismatch otherwise):
+Playwright must use the pre-installed browser:
+`chromium.launch({ executablePath: '/opt/pw-browsers/chromium' })`. Install playwright in the
+scratchpad (`npm i playwright`), never in the repo.
 
-```js
-const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' });
-```
+## Handles
+- `GK.editor` — Editor (world, history, selection, startPIE/stopPIE, pick, setMode)
+- `GK.App` — newProject(templateId), save(), package(opts), mapCheck(quiet), console(cmd)
+- `GK.editor.pie.game` — live Game during Play In Editor; `game.update(1/60)` steps it deterministically
+- Packaged game: `GK.runtime` (engine, world, game, start())
 
-Install playwright in the scratchpad, not the repo (`npm i playwright` — browser
-download is skipped via env).
-
-## Drive
-
-The engine exposes `window.GK` (World, Editor, Player, Entities, state, setMode,
-setTool, setMapSize, restartGame). Prefer real input (mouse/keyboard events on
-the canvas) for editor tools and movement; use `GK` to read state and for
-teleport-style test setup.
-
-Flows worth driving:
-- Boot: starter world (`Object.keys(GK.World.voxels).length` ≈ 421), no console errors
-- Editor: brush click (aim at an EMPTY floor pixel, e.g. (820,520) — screen
-  center hits the demo coin and *replaces* it, count stays flat), box drag,
-  eraser, Ctrl+Z/Y round trip
-- Play: click `#modePlay`, wait ~2 s, player lands on start pad (y≈1, onGround)
-- Death: teleport far off-map (`GK.state.player.pos.set(500,5,500)`), expect GAME OVER
-- Publish: `waitForEvent('download')` + click `#btn-publish` (60 s timeout — slow
-  under software GL), save, open via `file://`, click START GAME, expect playable
+## Flows worth driving
+- First launch shows the Project Browser modal (remove `.modal-back` or click a template → Create Project). A guided tour may open; click `#tour-card >> text=Skip`.
+- Build mode (Shift+2): click the viewport canvas to place blocks; `V` box tool drag; Ctrl+Z/Y.
+- Place Actors: click `.pa-item >> text=Coin`, then click the viewport.
+- Gizmo: project `GK.editor.gizmo.root` handle positions to screen and drag with the real mouse.
+- PIE: `#toolbar .tb.play`; F10 stops. Voxel edits made during PIE must be rolled back.
+- Package: `GK.App.package({...})` → download → open via `file://` → click `Play`.
 
 ## Gotchas
-
-- Google Fonts request fails in the sandbox (`ERR_CONNECTION_RESET`) — filter it
-  from console-error assertions; not an app bug.
-- Headless GL is llvmpipe: FPS is ~10 even on small maps. Assert on DRAW CALLS
-  (debug panel, expect <40 on a 10k map), never on FPS.
-- Pointer lock is unreliable headless — test shooting via `GK.Player.shoot()`.
-- The demo level has a jump pad at (0,1,-2): walking the player south bounces
-  them ~18 blocks high and possibly onto the goal. Restart before assertions
-  that assume the player is grounded.
-- After GAME OVER the overlay intercepts clicks on the top bar — click
-  "BACK TO EDITOR" in the overlay, not `#modeEdit`.
-
-A full smoke script covering all of the above lived at
-`scratchpad/pwtest/smoke.js` (session-local); rebuild from the flows above.
+- Software GL: ~3–10 FPS. Frame dt is capped at 0.1s, so real-time walking covers less
+  distance than expected; step `game.update(1/60)` in a loop for gameplay assertions.
+- Thumbnails render on a queue (~200 ms each under software GL); wait for them rather than using a fixed sleep.
+- Filter `ERR_CONNECTION` / favicon console errors (sandbox network).
+- Headless pointer lock is unreliable; game input can be simulated with `game.input.pressed.add('fire')`.
