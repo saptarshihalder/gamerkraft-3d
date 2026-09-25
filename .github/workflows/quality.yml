@@ -1,0 +1,70 @@
+name: Quality checks
+
+on:
+  workflow_call:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  formatting-and-linting:
+    name: Formatting and linting
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npm run format:check
+      - run: npm run lint
+
+  module-tests:
+    name: Module tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npm test
+
+  build-package:
+    name: Build and package verification
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npm run build
+      - run: test -f dist/browser/index.html
+      - run: test -f dist/browser/asset-manifest.json
+      - run: test -f dist/browser/GamerKraft_Editor.html
+      - uses: actions/upload-artifact@v4
+        with:
+          name: site
+          path: dist/browser
+          if-no-files-found: error
+
+  browser-smoke-tests:
+    name: Browser smoke tests
+    needs: build-package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: site
+          path: dist/browser
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:smoke

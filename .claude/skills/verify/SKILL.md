@@ -30,3 +30,6 @@ scratchpad (`npm i playwright`), never in the repo.
 - Thumbnails render on a queue (~200 ms each under software GL); wait for them rather than using a fixed sleep.
 - Filter `ERR_CONNECTION` / favicon console errors (sandbox network).
 - Headless pointer lock is unreliable; game input can be simulated with `game.input.pressed.add('fire')`.
+
+## Repo checks (CI parity)
+`npm ci && npm test && npm run lint && npm run build && GK_CHROMIUM=/opt/pw-browsers/chromium npm run test:smoke`

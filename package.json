@@ -1,0 +1,18 @@
+{
+  "name": "gamerkraft-3d-beta",
+  "version": "0.1.0",
+  "description": "A browser-based voxel game engine and level editor.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "build": "node tools/gk-build.mjs",
+    "build:assets": "node tools/gk-build.mjs",
+    "format:check": "npx --yes prettier@3.5.3 --check package.json playwright.config.mjs .github CONTRIBUTING.md ARCHITECTURE.md ROADMAP.md RELEASES.md CHANGELOG.md test/browser",
+    "lint": "node tools/gk-lint.mjs",
+    "test": "node --test test/*.test.js",
+    "test:smoke": "playwright test --config=playwright.config.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.51.1"
+  }
+}

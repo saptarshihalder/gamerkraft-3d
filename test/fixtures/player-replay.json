@@ -1,0 +1,5 @@
+[
+  [0, { "move": { "x": 0, "z": 1 }, "jump": false, "sprint": false, "interact": false }],
+  [1, { "move": { "x": 0, "z": 1 }, "jump": true, "sprint": false, "interact": false }],
+  [2, { "move": { "x": 1, "z": 1 }, "jump": false, "sprint": true, "interact": true }]
+]
