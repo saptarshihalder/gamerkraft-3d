@@ -3,7 +3,6 @@ GK.module('core/actors', function (GK) {
 
     const U = GK.Util;
 
-    // ======================================================== shared assets
     const Assets = GK.Assets = {
         _m: new Map(),
         _g: new Map(),
@@ -12,7 +11,6 @@ GK.module('core/actors', function (GK) {
             if (!g) { g = make(); this._g.set(key, g); }
             return g;
         },
-        /** Cached MeshStandardMaterial. Colors are sRGB (hex number or css string). */
         std(color, opts) {
             const key = 's|' + color + '|' + JSON.stringify(opts || {});
             let m = this._m.get(key);
@@ -180,7 +178,6 @@ GK.module('core/actors', function (GK) {
     }
 
     function pathHelper(a, yLocal) {
-        // Editor-only line + ghost showing where a mover travels to.
         const off = new THREE.Vector3(a.props.moveX || 0, a.props.moveY || 0, a.props.moveZ || 0);
         const inv = new THREE.Euler(0, -a.rot * U.DEG, 0);
         off.applyEuler(inv);
@@ -195,7 +192,6 @@ GK.module('core/actors', function (GK) {
         return [line, ghost];
     }
 
-    // ======================================================== property schema helpers
     const num = (key, label, def, min, max, step, description) => ({ key, label, type: 'number', default: def, min, max, step: step || 1, description });
     const bool = (key, label, def, description) => ({ key, label, type: 'bool', default: def, description });
     const enm = (key, label, def, options, description) => ({ key, label, type: 'enum', default: def, options, description });
@@ -209,7 +205,6 @@ GK.module('core/actors', function (GK) {
     const VARIANT_COLORS = { chaser: '#dc2626', patroller: '#ea7a12', jumper: '#16a34a', flyer: '#9333ea' };
     const CHANNEL_COLORS = ['#22d3ee', '#a855f7', '#f97316', '#22c55e', '#ef4444', '#eab308', '#3b82f6', '#ec4899', '#e5e7eb'];
 
-    // ======================================================== registry
     const Actors = GK.Actors = {
         types: Object.create(null),
         list: [],
@@ -228,7 +223,6 @@ GK.module('core/actors', function (GK) {
         Actors.list.push(def);
     }
 
-    // ---------------------------------------------------------------- Gameplay
     define({
         type: 'player_start', label: 'Player Start', category: 'Gameplay', icon: 'user-round', editorOnly: true, unique: true,
         description: 'Where the player spawns. The arrow shows the starting facing direction.',
@@ -461,7 +455,6 @@ GK.module('core/actors', function (GK) {
         }
     });
 
-    // ---------------------------------------------------------------- Collectibles
     function pickup(type, label, icon, description, props, buildItem, bounds) {
         define({
             type, label, category: 'Collectibles', icon, description, props,
@@ -542,7 +535,6 @@ GK.module('core/actors', function (GK) {
             return g;
         });
 
-    // ---------------------------------------------------------------- Hazards
     define({
         type: 'spikes', label: 'Spikes', category: 'Hazards', icon: 'triangle',
         description: 'Hurts the player on contact.',
@@ -575,7 +567,6 @@ GK.module('core/actors', function (GK) {
         animate(view, a, t) { const b = view.userData.parts.blade; if (b) b.rotation.z = -t * 9; }
     });
 
-    // ---------------------------------------------------------------- Enemies
     define({
         type: 'enemy', label: 'Enemy', category: 'Enemies', icon: 'skull',
         description: 'Hostile creature. Stomp on it or shoot it.',
@@ -651,7 +642,6 @@ GK.module('core/actors', function (GK) {
         }
     });
 
-    // ---------------------------------------------------------------- Lights
     define({
         type: 'light_point', label: 'Point Light', category: 'Lights', icon: 'lightbulb', editorOnly: true,
         description: 'Dynamic point light. (Nearest lights are active.)',
@@ -691,7 +681,6 @@ GK.module('core/actors', function (GK) {
         }
     });
 
-    // ---------------------------------------------------------------- Props
     define({
         type: 'crate', label: 'Crate', category: 'Props', icon: 'package', solid: true,
         description: 'Wooden crate. Can be breakable and drop a pickup.',
@@ -723,13 +712,11 @@ GK.module('core/actors', function (GK) {
         }
     });
 
-    // ---------------------------------------------------------------- Foliage (GPU-instanced)
     function foliage(type, label, icon, description, bounds, solidBox, partsFn, extra) {
         define(Object.assign({
             type, label, category: 'Foliage', icon, description, bounds, solidBox,
             solid: !!solidBox, foliage: true, parts: partsFn,
             build(a) {
-                // Standalone (non-instanced) build, used for thumbnails.
                 const g = group([]);
                 partsFn(a).forEach(p => { const m = new THREE.Mesh(p.geo, p.mat); m.applyMatrix4(p.m); g.add(m); });
                 return g;
@@ -770,7 +757,6 @@ GK.module('core/actors', function (GK) {
         { geo: G.cone(0.04, 0.32, 3), mat: Assets.std('#62ad3f', { roughness: 0.9, flatShading: true }), m: M4(-0.08, 0.15, -0.04, 1, 1, 1, 0.2, 0, 0.35) }
     ]));
 
-    // ======================================================== helpers
     Actors.get = type => Actors.types[type] || null;
 
     const toVec3 = (v, fallback) => {
@@ -814,7 +800,6 @@ GK.module('core/actors', function (GK) {
         return [Math.sin(r), 0, Math.cos(r)];
     };
 
-    /** Axis-aligned world box for local bottom-centered dims [w,h,d], scaled + yawed. */
     Actors.boxFor = function (a, dims, out) {
         const w = dims[0] * Math.abs(a.scale[0]), h = dims[1] * Math.abs(a.scale[1]), d = dims[2] * Math.abs(a.scale[2]);
         const r = a.rot * U.DEG, c = Math.abs(Math.cos(r)), s = Math.abs(Math.sin(r));
@@ -830,7 +815,6 @@ GK.module('core/actors', function (GK) {
         return def && def.solidBox ? Actors.boxFor(a, def.solidBox, out) : null;
     };
 
-    /** Build the visual Object3D for an actor (non-instanced). */
     Actors.buildView = function (a) {
         const def = Actors.get(a.type);
         const obj = def.build(a);

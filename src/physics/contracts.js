@@ -1,4 +1,3 @@
-/** Backend-neutral physics API. Positions are feet-centered AABBs. */
 export class PhysicsWorld {
   createCollider(_descriptor) { throw new Error('PhysicsWorld#createCollider must be implemented'); }
   destroyCollider(_collider) { throw new Error('PhysicsWorld#destroyCollider must be implemented'); }

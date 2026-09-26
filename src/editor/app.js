@@ -5,7 +5,6 @@ GK.module('editor/app', { runtime: false }, function (GK) {
     const store = U.store;
     const K_INDEX = 'gk3.projects', K_PROJ = 'gk3.p.', K_LAST = 'gk3.last', K_PREFS = 'gk3.prefs';
 
-    // ================================================================ Storage
     const Storage = {
         list() { return store.get(K_INDEX, []).sort((a, b) => b.modified - a.modified); },
         load(id) { return store.get(K_PROJ + id, null); },
@@ -26,7 +25,6 @@ GK.module('editor/app', { runtime: false }, function (GK) {
         }
     };
 
-    // ================================================================ Packager
     const Packager = {
         html(project, opts) {
             opts = opts || {};
@@ -44,7 +42,6 @@ GK.module('editor/app', { runtime: false }, function (GK) {
         }
     };
 
-    // ================================================================ App
     const App = GK.App = {
         Storage, Packager,
 
@@ -82,7 +79,6 @@ GK.module('editor/app', { runtime: false }, function (GK) {
         },
 
         _boot() {
-            // Migrate a v2 autosave into a proper project the first time.
             const legacy = store.get('gamerkraft_autosave_v2', null);
             if (legacy && !Storage.list().length) {
                 try {
@@ -90,7 +86,7 @@ GK.module('editor/app', { runtime: false }, function (GK) {
                     w.meta.name = 'Migrated Level (v2)';
                     Storage.save(w.toJSON());
                     this.ed.log('Migrated your previous GamerKraft v2 level into a project', 'success', 'LogInit');
-                } catch (e) { /* corrupt */ }
+                } catch (e) { }
             }
             const last = store.get(K_LAST, null);
             const data = last && Storage.load(last);
@@ -111,13 +107,12 @@ GK.module('editor/app', { runtime: false }, function (GK) {
             document.title = (w.meta.name || 'Untitled') + ' — GamerKraft Engine';
         },
 
-        // ------------------------------------------------------------ project ops
         save(silent) {
             const ed = this.ed;
             if (ed.pie) { UI.toast('Stop Play before saving', 'warn'); return; }
             const data = ed.world.toJSON();
             let thumb = '';
-            try { thumb = ed.engine.snapshot(240, 135, ed.activeCamera); } catch (e) { /* ignore */ }
+            try { thumb = ed.engine.snapshot(240, 135, ed.activeCamera); } catch (e) { }
             if (!Storage.save(data, thumb)) { UI.toast('Save failed: browser storage is full. Use File ▸ Export Project File.', 'error'); ed.log('Save failed (storage quota)', 'error', 'LogSave'); return false; }
             ed.clearDirty();
             ed.log((silent ? 'Autosaved ' : 'Saved ') + '"' + data.meta.name + '"', 'success', 'LogSave');
@@ -209,7 +204,6 @@ GK.module('editor/app', { runtime: false }, function (GK) {
             this.ed.log('Launched standalone game window', 'info', 'LogPlay');
         },
 
-        /** Validate the level; returns [{level,msg,id}] and logs results. */
         mapCheck(quiet) {
             const w = this.ed.world, out = [];
             const of = t => w.findActors(t);
@@ -239,7 +233,6 @@ GK.module('editor/app', { runtime: false }, function (GK) {
             return out;
         },
 
-        // ------------------------------------------------------------ project browser
         projectBrowser(firstRun) {
             const ed = this.ed;
             let cat = Storage.list().length && !firstRun ? 'recent' : 'games';
@@ -301,7 +294,6 @@ GK.module('editor/app', { runtime: false }, function (GK) {
             dlg = UI.modal('Project Browser', h('div.pb', side, grid, info), null, { icon: 'library', noPad: true, focus: false });
         },
 
-        // ------------------------------------------------------------ layout
         _layout() {
             const app = document.getElementById('app'), ws = document.getElementById('workspace'), dr = document.getElementById('dock-right');
             const apply = () => {
@@ -347,7 +339,6 @@ GK.module('editor/app', { runtime: false }, function (GK) {
             store.set(K_PREFS, this.prefs);
         },
 
-        // ------------------------------------------------------------ menu bar
         _menubar() {
             const ed = this.ed, nav = document.getElementById('menus');
             const menus = {
@@ -427,7 +418,6 @@ GK.module('editor/app', { runtime: false }, function (GK) {
             UI.menuAt(b, items(), () => b.classList.remove('open'));
         },
 
-        // ------------------------------------------------------------ toolbar
         _toolbar() {
             const ed = this.ed, tb = document.getElementById('toolbar');
             const btn = (icon, label, title, action, cls) => {
@@ -475,7 +465,6 @@ GK.module('editor/app', { runtime: false }, function (GK) {
             sync();
         },
 
-        // ------------------------------------------------------------ viewport overlays
         _viewportBars() {
             const ed = this.ed;
             const L = document.getElementById('vp-left'), R = document.getElementById('vp-right');
@@ -507,21 +496,18 @@ GK.module('editor/app', { runtime: false }, function (GK) {
             const now = performance.now();
             if (this._ovT && now - this._ovT < 100) return;
             this._ovT = now;
-            // axis widget
             const svg = document.getElementById('vp-axis');
             const q = ed.activeCamera.quaternion.clone().invert();
             let s = '';
             [['X', 1, 0, 0, '#e5484d'], ['Y', 0, 1, 0, '#5ec04a'], ['Z', 0, 0, 1, '#3b82f6']].map(a => { const v = new THREE.Vector3(a[1], a[2], a[3]).applyQuaternion(q); return [a[0], v, a[4]]; })
                 .sort((a, b) => a[1].z - b[1].z).forEach(([n, v, c]) => { s += `<line x1="0" y1="0" x2="${v.x * 20}" y2="${-v.y * 20}" stroke="${c}" stroke-width="2.5"/><text x="${v.x * 25}" y="${-v.y * 25 + 3}" fill="${c}" font-size="9" font-weight="700" text-anchor="middle">${n}</text>`; });
             svg.innerHTML = s;
-            // stats
             const st = document.getElementById('vp-stats');
             st.classList.toggle('hidden', !ed.show.stats || !!ed.pie);
             if (ed.show.stats && !ed.pie) {
                 const i = ed.engine.renderer.info;
                 st.textContent = `FPS      ${ed.engine.info.fps}\nDraws    ${i.render.calls}\nTris     ${i.render.triangles.toLocaleString()}\nChunks   ${ed.engine.worldView.chunks.size}\nGeoms    ${i.memory.geometries}\nActors   ${ed.world.actors.length}`;
             }
-            // hint
             const hints = {
                 select: ed.placing ? `Click to place ${A.get(ed.placing).label} • Shift: place several • Esc: cancel` : 'Click: select • W/E/R: move/rotate/scale • RMB+WASD: fly • Alt+LMB: orbit • F: focus',
                 build: 'Click/drag: place • Shift: erase • Alt: pick block • [ ]: brush size • RMB+WASD: fly',
@@ -530,7 +516,6 @@ GK.module('editor/app', { runtime: false }, function (GK) {
             };
             const t = hints[ed.mode];
             if (this._hint.textContent !== t) this._hint.textContent = t;
-            // status
             if (this._sbStats) {
                 const txt = `${ed.world.actors.length} actors • ${ed.world.size}×${ed.world.size} map`;
                 if (this._sbStats.textContent !== txt) this._sbStats.textContent = txt;
@@ -539,7 +524,6 @@ GK.module('editor/app', { runtime: false }, function (GK) {
             }
         },
 
-        // ------------------------------------------------------------ status bar + console
         _statusbar() {
             const sb = document.getElementById('statusbar'), ed = this.ed;
             const cmd = h('input', { placeholder: 'Enter console command (help)', spellcheck: false });
@@ -586,7 +570,6 @@ GK.module('editor/app', { runtime: false }, function (GK) {
             else log('Unknown command "' + c + '" — type help', 'warn');
         },
 
-        // ------------------------------------------------------------ keyboard
         _hotkeys() {
             const ed = this.ed;
             window.addEventListener('keydown', e => {
@@ -605,7 +588,7 @@ GK.module('editor/app', { runtime: false }, function (GK) {
                     return;
                 }
                 if (e.shiftKey && /^Digit[1-4]$/.test(k)) { ed.setMode(['select', 'build', 'landscape', 'foliage'][+k.slice(5) - 1]); return; }
-                if (ed.mouse.right) return; // flying: WASDQE belong to the camera
+                if (ed.mouse.right) return;
                 if (k === 'Escape') { if (ed.placing) ed.armPlacement(null); else ed.deselect(); return; }
                 if (k === 'Delete' || k === 'Backspace') { e.preventDefault(); ed.deleteSelected(); return; }
                 if (k === 'KeyF') { ed.focusSelection(); return; }
@@ -634,7 +617,6 @@ GK.module('editor/app', { runtime: false }, function (GK) {
             UI.modal('Keyboard Shortcuts', h('div', { style: { width: '560px' } }, rows.map(r => h('div.form-row', { style: { gridTemplateColumns: '170px 1fr', marginBottom: '6px' } }, h('b', r[0]), h('span.muted', r[1])))), [{ label: 'Close', primary: true }], { icon: 'keyboard' });
         },
 
-        // ------------------------------------------------------------ drag & drop + context menu
         _dnd() {
             const ed = this.ed, vp = document.getElementById('viewport');
             vp.addEventListener('dragover', e => { if (Array.from(e.dataTransfer.types).includes('text/gk-actor')) { e.preventDefault(); vp.classList.add('drop-hover'); } });
@@ -673,7 +655,6 @@ GK.module('editor/app', { runtime: false }, function (GK) {
             });
         },
 
-        // ------------------------------------------------------------ guided tour
         tour() {
             const steps = [
                 [null, 'Welcome to GamerKraft Engine', 'This quick tour shows the main parts of the editor. The layout follows Unreal Engine conventions, so it should feel familiar.'],

@@ -1,13 +1,6 @@
 GK.module('render/voxel-material', function (GK) {
     'use strict';
 
-    /*
-     * Procedural voxel surface shading. Patterns are generated in the fragment
-     * shader from world position + a per-vertex pattern id, so there are no
-     * texture atlases, no mip bleeding and resolution is unlimited. Injected
-     * into MeshStandardMaterial so lighting/shadows/fog/tone mapping all apply.
-     * Pattern ids must match GK.Blocks.PATTERN.
-     */
     const VM = GK.VoxelMaterial = {};
 
     VM.uniforms = {
@@ -16,7 +9,7 @@ GK.module('render/voxel-material', function (GK) {
         uGrassRatio: { value: new THREE.Vector3(1, 1, 1) }
     };
 
-    const FRAG_PARS = /* glsl */`
+    const FRAG_PARS = `
 uniform float uTime;
 uniform float uUnlit;
 uniform vec3 uGrassRatio;
@@ -226,7 +219,7 @@ void gkSurface(inout vec3 col, inout float alpha, inout float rough, inout float
 }
 `;
 
-    const FRAG_SURFACE = /* glsl */`
+    const FRAG_SURFACE = `
     float gkRough = -1.0;
     float gkMetal = -1.0;
     vec3 gkEmis = vec3(0.0);
@@ -264,7 +257,6 @@ void gkSurface(inout vec3 col, inout float alpha, inout float rough, inout float
         transparent: true, depthWrite: false, side: THREE.DoubleSide
     }));
 
-    // Grass fringe tint = grass color / dirt color, so baked AO is preserved.
     (function () {
         const g = GK.Blocks.linearColor(GK.Blocks.byKey.grass.top[0]);
         const d = GK.Blocks.linearColor(GK.Blocks.byKey.grass.side[0]);

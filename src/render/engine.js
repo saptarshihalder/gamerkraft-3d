@@ -4,18 +4,16 @@ GK.module('render/engine', function (GK) {
     const U = GK.Util, A = GK.Actors, World = GK.World;
     const LIGHT_POOL = 6;
 
-    // ================================================================ WorldView
-    /** Keeps scene objects (chunk meshes, actor views, foliage instances) in sync with a World. */
     class WorldView {
         constructor(engine) {
             this.engine = engine;
             this.root = new THREE.Group();
             this.root.name = 'World';
             engine.scene.add(this.root);
-            this.chunks = new Map();      // ckey -> {opaque, transparent}
+            this.chunks = new Map();
             this.dirty = new Set();
-            this.views = new Map();       // actorId -> Object3D
-            this.foliage = new Map();     // type -> {meshes[], ids[]}
+            this.views = new Map();
+            this.foliage = new Map();
             this.foliageDirty = true;
             this.editorVisuals = true;
             this.world = null;
@@ -44,7 +42,6 @@ GK.module('render/engine', function (GK) {
             this.world = null;
         }
 
-        // ---- chunks
         markChunk(k, neighbors) {
             if (!neighbors) { this.dirty.add(k); return; }
             const [cx, cy, cz] = World.ckeyParts(k);
@@ -97,7 +94,6 @@ GK.module('render/engine', function (GK) {
             for (const k of this.world.chunks.keys()) this.rebuildChunk(k);
             if (includeActors) { this.clearActors(); this.world.actors.forEach(a => this.addActor(a)); }
         }
-        /** Remesh dirty chunks within a time budget (ms). */
         processDirty(budget) {
             if (!this.dirty.size) return 0;
             const t0 = performance.now();
@@ -112,7 +108,6 @@ GK.module('render/engine', function (GK) {
         }
         flush() { while (this.dirty.size) this.processDirty(1e9); if (this.foliageDirty) this.rebuildFoliage(); }
 
-        // ---- actors
         addActor(a) {
             const def = A.get(a.type);
             if (!def) return;
@@ -149,7 +144,6 @@ GK.module('render/engine', function (GK) {
             if (!this.world) return;
             for (const [id, v] of this.views) { const a = this.world.getActor(id); if (a) this._applyVis(v, a); }
         }
-        /** Rebuild views + transforms from world data (after a play session). */
         resetViews() {
             if (!this.world) return;
             this.clearActors();
@@ -189,7 +183,6 @@ GK.module('render/engine', function (GK) {
                 this.foliage.set(type, { meshes, ids: list.map(a => a.id) });
             }
         }
-        /** Raycast actor visuals. Returns {id, distance, point} or null. */
         pickActor(raycaster) {
             const targets = [];
             for (const v of this.views.values()) if (v.visible) targets.push(v);
@@ -217,7 +210,6 @@ GK.module('render/engine', function (GK) {
         }
     }
 
-    // ================================================================ Particles
     class Particles {
         constructor(scene, cap) {
             this.cap = cap || 1024;
@@ -231,7 +223,6 @@ GK.module('render/engine', function (GK) {
             this._m = new THREE.Matrix4(); this._q = new THREE.Quaternion(); this._s = new THREE.Vector3(); this._p = new THREE.Vector3();
             this.enabled = true;
         }
-        /** opts: color, count, speed, life, size, gravity, up */
         emit(pos, o) {
             if (!this.enabled) return;
             o = o || {};
@@ -269,7 +260,6 @@ GK.module('render/engine', function (GK) {
         clear() { this.list = []; this.mesh.count = 0; }
     }
 
-    // ================================================================ Engine
     class Engine {
         constructor(container, opts) {
             opts = opts || {};

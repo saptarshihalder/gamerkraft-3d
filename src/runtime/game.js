@@ -15,11 +15,6 @@ GK.module('runtime/game', function (GK) {
         return bulletMat[k];
     }
 
-    /**
-     * A play session over a World. Voxel edits are journaled and rolled back on
-     * stop(); actor views are mutated for the session and rebuilt afterwards.
-     * opts: { engine, world, container, input, hud, pie, onExit, onRestart }
-     */
     class Game extends U.Emitter {
         constructor(opts) {
             super();
@@ -39,7 +34,6 @@ GK.module('runtime/game', function (GK) {
 
         get S() { return this.world.settings; }
 
-        // ============================================================ lifecycle
         start() {
             const w = this.world, S = this.S, eng = this.engine;
             w.beginSession();
@@ -73,7 +67,6 @@ GK.module('runtime/game', function (GK) {
             this.gemsTotal = this.ents.filter(e => e.type === 'gem').length;
             this.enemiesTotalStatic = this.enemies.length + this.ents.filter(e => e.type === 'turret' && e.a.props.health > 0).length;
 
-            // player
             const start = this.ents.find(e => e.type === 'player_start');
             const at = this.opts.spawnAt;
             const spawn = at ? new V3(at[0], at[1], at[2]) : start ? start.pos.clone() : new V3(0, Math.max(1, w.groundHeight(0, 0)), 0);
@@ -187,7 +180,6 @@ GK.module('runtime/game', function (GK) {
             return g;
         }
 
-        // ============================================================ frame
         update(dt) {
             if (this.state === 'idle') return;
             const inp = this.input;
@@ -244,7 +236,6 @@ GK.module('runtime/game', function (GK) {
             }));
         }
 
-        // ============================================================ simulation step
         _step(dt) {
             const p = this.player, S = this.S, w = this.world, inp = this.input;
             this.simTime = (this.simTime || 0) + dt;
@@ -264,7 +255,6 @@ GK.module('runtime/game', function (GK) {
             p.teleCd = Math.max(0, p.teleCd - dt);
             if (p.speedT > 0) { p.speedT -= dt; if (p.speedT <= 0) p.speedMul = 1; }
 
-            // environment probes
             let water = false, lava = false, ladder = false;
             P.sampleBlocks(w, p.pos, HW, H, (id, x, y, z) => {
                 const l = B.LIQUID[id];
@@ -276,7 +266,6 @@ GK.module('runtime/game', function (GK) {
             p.inWater = water; p.onLadder = ladder;
             if (lava) { this.hurt(999, 'lava'); return; }
 
-            // input → horizontal velocity
             const mv = inp.move();
             const fx = Math.sin(p.yaw), fz = Math.cos(p.yaw);
             let dx = fx * mv.y - fz * mv.x, dz = fz * mv.y + fx * mv.x;
@@ -291,7 +280,6 @@ GK.module('runtime/game', function (GK) {
             p.vel.z += (tvz - p.vel.z) * k;
             if (Math.hypot(dx, dz) > 0.1) p.facing = Math.atan2(dx, dz);
 
-            // jumping
             const g = S.player.gravity;
             const jumpV = Math.sqrt(2 * g * S.player.jumpHeight);
             if (inp.consume('jump')) p.jumpBuf = 0.14;
@@ -316,8 +304,7 @@ GK.module('runtime/game', function (GK) {
                 Audio.play('doublejump');
                 this.engine.particles.emit(new V3(p.pos.x, p.pos.y, p.pos.z), { color: '#a5f3fc', count: 10, speed: 3, up: 0.3 });
             }
-            if (!inp.down('jump') && p.vel.y > 0 && !ladder && !water && !p.padLaunch) p.vel.y *= Math.pow(0.02, dt); // variable jump height
-            // jetpack
+            if (!inp.down('jump') && p.vel.y > 0 && !ladder && !water && !p.padLaunch) p.vel.y *= Math.pow(0.02, dt);
             p.jetting = false;
             if (p.hasJetpack && !p.onGround && !water && inp.down('jump') && p.vel.y < jumpV * 0.6 && (p.fuelMax === 0 || p.fuel > 0)) {
                 p.vel.y = Math.min(p.vel.y + (g + 26) * dt, 9);
@@ -328,7 +315,6 @@ GK.module('runtime/game', function (GK) {
             if (p.onGround && p.hasJetpack && p.fuelMax > 0) p.fuel = Math.min(p.fuelMax, p.fuel + dt * 1.5);
             p.vel.y = Math.max(p.vel.y - gravity * dt, -45);
 
-            // move + collide
             const prevY = p.vel.y;
             const res = P.move(w, p.pos, HW, H, this._tmp.copy(p.vel).multiplyScalar(dt), colliders, this._moveRes || (this._moveRes = {}));
             if (res.hx) p.vel.x = 0;
@@ -596,7 +582,6 @@ GK.module('runtime/game', function (GK) {
 
         addScore(n) { this.score += n | 0; }
 
-        // ============================================================ enemies & combat
         _stepEnemies(dt, colliders) {
             const p = this.player, w = this.world;
             for (const e of this.enemies) {
@@ -612,7 +597,7 @@ GK.module('runtime/game', function (GK) {
                     const along = (e.pos.x - e.home.x) * f[0] + (e.pos.z - e.home.z) * f[1];
                     if (along > pr.patrol) e.dir = -1; else if (along < -pr.patrol) e.dir = 1;
                     const ahead = w.getVoxel(Math.floor(e.pos.x + f[0] * e.dir * 0.6), Math.floor(e.pos.y - 0.5), Math.floor(e.pos.z + f[1] * e.dir * 0.6));
-                    if (e.onGround && !B.SOLID[ahead]) e.dir = -e.dir; // don't walk off ledges
+                    if (e.onGround && !B.SOLID[ahead]) e.dir = -e.dir;
                     tx = f[0] * e.dir; tz = f[1] * e.dir;
                 } else if (sees) {
                     tx = toP.x / (dist || 1); tz = toP.z / (dist || 1);
@@ -643,7 +628,6 @@ GK.module('runtime/game', function (GK) {
                 e.hitT = Math.max(0, e.hitT - dt);
                 e.atkCd = Math.max(0, e.atkCd - dt);
                 this._refreshBoxes(e);
-                // contact with player
                 if (!p.dead && P.boxOverlap(this._pbox, e.box)) {
                     if (p.vel.y < -2 && p.pos.y > e.pos.y + 0.45) {
                         p.vel.y = 9; this.damageEnemy(e, 99);
@@ -788,7 +772,6 @@ GK.module('runtime/game', function (GK) {
             if (this.player.pos.distanceTo(e.pos) < r) this.hurt(1, 'explosion', e.pos);
         }
 
-        // ============================================================ player actions (shoot / build)
         _aimRay() {
             const cam = this.engine.camera;
             const dir = new V3();
@@ -841,7 +824,6 @@ GK.module('runtime/game', function (GK) {
             }
         }
 
-        // ============================================================ damage, death, rules
         hurt(dmg, source, from) {
             const p = this.player;
             if (p.dead || this.state !== 'playing' || dmg <= 0) return;
@@ -926,10 +908,8 @@ GK.module('runtime/game', function (GK) {
             this.hud.screen({ title, color, subtitle, stats, buttons: btns });
         }
 
-        // ============================================================ presentation
         _animate(dt) {
             const p = this.player, t = this.engine.time;
-            // avatar
             if (this.avatar) {
                 this.avatar.position.copy(p.pos);
                 this.avatar.rotation.y = U.damp(this.avatar.rotation.y, this.avatar.rotation.y + U.wrapAngle(p.facing - this.avatar.rotation.y), 14, dt);
@@ -940,7 +920,6 @@ GK.module('runtime/game', function (GK) {
                 this.jetMesh.visible = p.hasJetpack;
                 this.avatar.visible = !p.dead && this.camMode === 'third' && !(p.invuln > 0 && Math.floor(t * 12) % 2 === 0 && this.state === 'playing');
             }
-            // world actor idle animations
             for (const e of this.ents) {
                 if (!e.view || !e.active || !e.view.visible) continue;
                 if (e.type === 'enemy') {
@@ -965,8 +944,6 @@ GK.module('runtime/game', function (GK) {
                 let dist = 5.5;
                 const hit = w.raycast(pivot.x, pivot.y, pivot.z, -f.x, -f.y, -f.z, dist, id => B.SOLID[id] === 1 && B.OPAQUE[id] === 1);
                 if (hit) dist = Math.max(0.6, hit.t - 0.25);
-                // Stay on the orbit ray; only the (collision-limited) distance is smoothed,
-                // pulling in instantly and easing back out.
                 if (this.camDist == null || snap || dist < this.camDist) this.camDist = dist;
                 else this.camDist = U.damp(this.camDist, dist, 6, dt);
                 this.camPos = pivot.clone().addScaledVector(f, -this.camDist);
@@ -1003,7 +980,6 @@ GK.module('runtime/game', function (GK) {
             this.hud.prompt(needLock ? 'Click to capture the mouse' : '');
         }
 
-        // ============================================================ scripting
         fire(event, arg) {
             this.emit('event', event, arg);
             const hs = this.handlers && this.handlers[event];

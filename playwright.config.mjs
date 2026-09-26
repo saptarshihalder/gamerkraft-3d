@@ -5,8 +5,6 @@ export default defineConfig({
   fullyParallel: true,
   use: {
     baseURL: "http://127.0.0.1:4173",
-    // Sandboxed dev environments provide a system Chromium instead of a
-    // Playwright-managed download; CI leaves this unset.
     launchOptions: process.env.GK_CHROMIUM
       ? { executablePath: process.env.GK_CHROMIUM }
       : {},

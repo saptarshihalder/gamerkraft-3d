@@ -1,4 +1,3 @@
-/** Multiplayer protocol contracts; transport and gameplay remain deliberately separate. */
 export const Authority = Object.freeze({ Server: 'server', Owner: 'owner', Shared: 'shared' });
 export class NetworkTransport { send(_message) { throw new Error('NetworkTransport#send must be implemented'); } onMessage(_listener) { throw new Error('NetworkTransport#onMessage must be implemented'); } close() {} }
 export class ReplicatedEntity {

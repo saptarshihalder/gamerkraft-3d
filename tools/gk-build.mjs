@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-/** GamerKraft asset validation, cooking, and browser deployment builder. */
 import { cp, mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
@@ -62,7 +61,6 @@ async function cook(asset) {
   const bytes = await readFile(asset.source);
   const derived = { format: 'gamerkraft.derived-asset', guid: asset.meta.guid, type: asset.meta.type, importer: asset.meta.importer, source: rel(asset.source), sourceHash: asset.sourceHash, derivedDataVersion: asset.meta.derivedData.version, byteLength: bytes.length };
   await writeFile(out, JSON.stringify(derived, null, 2) + '\n');
-  // A reimport deliberately modifies metadata in place, never its GUID.
   const updated = { ...asset.meta, sourceHash: asset.sourceHash, derivedData: { ...asset.meta.derivedData, path: rel(out) } };
   await writeFile(asset.file, JSON.stringify(updated, null, 2) + '\n');
   return { guid: updated.guid, type: updated.type, source: rel(asset.source), sourceHash: updated.sourceHash, dependencies: updated.dependencies, derivedData: updated.derivedData };
@@ -74,17 +72,9 @@ async function deployBrowser(manifest) {
   await writeFile(path.join(browser, 'asset-manifest.json'), JSON.stringify(manifest, null, 2) + '\n');
   const standalone = await buildStandaloneEditor();
   await writeFile(path.join(browser, 'GamerKraft_Editor.html'), standalone);
-  // The deployed page is the same single inlined document: HTML and engine
-  // update atomically, so CDN/browser caches can never serve a mixed version
-  // (a stale page with a fresh module graph, or the reverse). src/ stays in
-  // the artifact for reference and direct module access.
   await writeFile(path.join(browser, 'index.html'), standalone);
 }
 
-/**
- * A double-clickable single-file editor: index.html with the stylesheet and
- * every classic <script src> inlined. It boots (and packages games) from file://.
- */
 async function buildStandaloneEditor() {
   const escapeScript = js => js.replace(/<\/script/gi, '<\\/script').replace(/<!--/g, '<\\!--');
   let html = await readFile(path.join(root, 'index.html'), 'utf8');

@@ -127,7 +127,6 @@ GK.module('runtime/hud', function (GK) {
                 return `<div class="gk-slot${i === sel ? ' sel' : ''}" style="background:${b ? U.hexString(b.color) : '#000'}"><span>${i + 1}</span></div>`;
             }).join(''));
         }
-        /** Generic overlay screen. opts: {title, color, subtitle, stats:[[k,v]], buttons:[{label,primary,action}], html} */
         screen(opts) {
             const sc = this.$.screen;
             if (!opts) { sc.style.display = 'none'; sc.innerHTML = ''; return; }
@@ -148,7 +147,6 @@ GK.module('runtime/hud', function (GK) {
         }
         get screenOpen() { return this.$.screen.style.display === 'flex'; }
 
-        // ---- minimap: static terrain image + live markers
         buildMinimap(world) {
             const size = world.size, h = size >> 1;
             const c = document.createElement('canvas');

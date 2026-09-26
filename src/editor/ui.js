@@ -4,7 +4,6 @@ GK.module('editor/ui', { runtime: false }, function (GK) {
     const U = GK.Util;
     const UI = GK.UI = {};
 
-    /** Hyperscript: h('div.cls#id', {attrs, on:{click}}, ...children) */
     UI.h = function (sel, attrs, ...kids) {
         const m = /^([a-z0-9]+)?((?:[.#][\w-]+)*)$/i.exec(sel) || [];
         const el = document.createElement(m[1] || 'div');
@@ -30,7 +29,6 @@ GK.module('editor/ui', { runtime: false }, function (GK) {
     };
     const h = UI.h;
 
-    // ---- icons (lucide)
     const pascal = n => n.replace(/(^|-)([a-z0-9])/g, (_, __, c) => c.toUpperCase());
     const iconCache = {};
     UI.iconSVG = function (name, size) {
@@ -47,12 +45,10 @@ GK.module('editor/ui', { runtime: false }, function (GK) {
     };
     UI.icon = (name, size) => { const t = document.createElement('template'); t.innerHTML = UI.iconSVG(name, size); return t.content.firstChild; };
 
-    // ---- dropdown / context menus
     let openMenu = null;
     UI.closeMenu = function () {
         if (openMenu) { openMenu.el.remove(); if (openMenu.onClose) openMenu.onClose(); openMenu = null; }
     };
-    /** items: [{label, icon, kb, action, checked, disabled} | '-' | {head}] */
     UI.menu = function (items, x, y, onClose) {
         UI.closeMenu();
         const el = h('div.dropdown');
@@ -81,7 +77,6 @@ GK.module('editor/ui', { runtime: false }, function (GK) {
     window.addEventListener('mousedown', e => { if (openMenu && !openMenu.el.contains(e.target)) UI.closeMenu(); });
     window.addEventListener('blur', () => UI.closeMenu());
 
-    // ---- modal dialogs
     UI.modal = function (title, body, buttons, opts) {
         opts = opts || {};
         const back = h('div.modal-back');
@@ -126,8 +121,6 @@ GK.module('editor/ui', { runtime: false }, function (GK) {
         return { set: t => { el.firstChild.textContent = t; }, close: () => el.remove() };
     };
 
-    // ---- property grid
-    /** Drag a label horizontally to scrub a numeric value (Unreal-style). */
     UI.scrub = function (label, get, set, step) {
         label.addEventListener('mousedown', e => {
             if (e.button !== 0) return;
@@ -164,10 +157,6 @@ GK.module('editor/ui', { runtime: false }, function (GK) {
     }
     const fmt = v => (typeof v === 'number' ? String(U.round(v, 3)) : v);
 
-    /**
-     * Build a property row. p: {key,label,type,options,min,max,step,description}
-     * get(): value, set(value, commit)
-     */
     UI.propRow = function (p, get, set) {
         const label = h('label', { title: p.description || p.label }, p.label);
         let ctrl, refresh = () => {};
@@ -249,7 +238,6 @@ GK.module('editor/ui', { runtime: false }, function (GK) {
         return sec;
     };
 
-    /** Tabbed container. tabs: [{id,label,icon,build(body)}] */
     UI.tabs = function (container, tabs, active, onChange) {
         container.innerHTML = '';
         const strip = h('div.tabs');

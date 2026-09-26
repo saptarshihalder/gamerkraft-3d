@@ -1,4 +1,3 @@
-/** Semantic actions are the only input consumed by deterministic simulation. */
 export const Actions = Object.freeze({ Jump: 'Jump', Move: 'Move', Interact: 'Interact', Sprint: 'Sprint' });
 
 export class ActionMap {
@@ -20,7 +19,6 @@ export const createDefaultActionMap = () => new ActionMap({
   [Actions.Move + 'Left']: ['KeyA'], [Actions.Move + 'Right']: ['KeyD']
 });
 
-/** Tick-indexed inputs make re-simulation independent of browser event timing. */
 export class SimulationInputBuffer {
   constructor() { this.frames = new Map(); }
   clear() { this.frames.clear(); }

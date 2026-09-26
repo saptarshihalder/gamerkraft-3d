@@ -1,22 +1,11 @@
 import { createRng } from '../core/random.js';
 
-/**
- * Deterministic procedural terrain: layered value noise shapes rolling hills
- * with water in the valleys, stone under dirt under grass, trees and
- * collectibles on the surface, a start pad, and a goal on the highest peak.
- * Pure data in, pure data out — no renderer, no DOM — so worlds are
- * reproducible from a seed on any machine and testable in Node.
- */
-
-// Block ids from the block catalogue (assets/blocks). Kept as a narrow,
-// documented dependency so the generator stays decoupled from rendering.
 const STONE = 1, GRASS = 2, DIRT = 3, TREE = 7, START = 10, GOAL = 11,
   COIN = 12, WATER = 18, GEM = 22;
 
-const WATERLINE = 1;   // columns at or below this height become pools
-const MAX_HILL = 6;    // tallest surface height above the base floor
+const WATERLINE = 1;
+const MAX_HILL = 6;
 
-/** Smooth interpolated value noise over an integer lattice. */
 function makeNoise(rng, cell) {
   const lattice = new Map();
   const at = (ix, iz) => {
@@ -59,7 +48,6 @@ export function generateTerrain({ mapSize = 20, seed = 1 } = {}) {
     }
   }
 
-  // Surface decoration on dry grass only, kept off the map rim.
   for (let x = -half + 1; x < half - 1; x++) {
     for (let z = -half + 1; z < half - 1; z++) {
       const h = heights.get(`${x},${z}`);
@@ -71,8 +59,6 @@ export function generateTerrain({ mapSize = 20, seed = 1 } = {}) {
     }
   }
 
-  // Start pad near the center on dry land (spiral out until found), goal on
-  // the highest peak so every generated world is a playable climb.
   let start = null;
   for (let radius = 0; radius <= half && !start; radius++) {
     for (let x = -radius; x <= radius && !start; x++) {

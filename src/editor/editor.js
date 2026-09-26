@@ -3,8 +3,6 @@ GK.module('editor/editor', { runtime: false }, function (GK) {
 
     const U = GK.Util, B = GK.Blocks, A = GK.Actors, V3 = THREE.Vector3;
 
-    // ================================================================ History
-    /** Transactional undo/redo covering voxels, actors and world settings. */
     class History {
         constructor(ed) { this.ed = ed; this.undoStack = []; this.redoStack = []; this.cur = null; this.depth = 0; this.MAX = 100; }
         get world() { return this.ed.world; }
@@ -52,7 +50,6 @@ GK.module('editor/editor', { runtime: false }, function (GK) {
                 this.world.removeActor(id);
             });
         }
-        /** Apply a patch and record before/after snapshots. */
         modifyActor(id, patch) {
             return this._wrap('Modify Actor', t => {
                 const a = this.world.getActor(id);
@@ -62,7 +59,6 @@ GK.module('editor/editor', { runtime: false }, function (GK) {
                 t.ops.push({ op: 'mod', before, after: A.serialize(a) });
             });
         }
-        /** Record a change that was already applied live (gizmo drags). */
         recordModify(before, after) {
             this._wrap('Transform', t => t.ops.push({ op: 'mod', before, after }));
         }
@@ -105,7 +101,7 @@ GK.module('editor/editor', { runtime: false }, function (GK) {
         _apply(t, forward) {
             const w = this.world;
             const field = forward ? 4 : 3;
-            if (!forward) { // shrink undo must restore the size before re-adding voxels
+            if (!forward) {
                 for (const o of t.ops) if (o.op === 'size') w.setSize(o.before);
             }
             w.batch(() => { for (const e of t.vox.values()) w.setVoxel(e[0], e[1], e[2], e[field]); });
@@ -143,7 +139,6 @@ GK.module('editor/editor', { runtime: false }, function (GK) {
         clear() { this.undoStack.length = 0; this.redoStack.length = 0; this.cur = null; this.depth = 0; this.ed.emit('history'); }
     }
 
-    // ================================================================ Gizmo
     class Gizmo {
         constructor(ed) {
             this.ed = ed;
@@ -156,7 +151,6 @@ GK.module('editor/editor', { runtime: false }, function (GK) {
             const add = (parent, obj, handle, axis) => { obj.renderOrder = 999; obj.userData.handle = handle; obj.userData.axis = axis; parent.add(obj); if (obj.material && obj.material.visible !== false) this.handles.push(obj); return obj; };
             const axes = [['x', 0xe5484d, new V3(1, 0, 0)], ['y', 0x5ec04a, new V3(0, 1, 0)], ['z', 0x3b82f6, new V3(0, 0, 1)]];
             const orient = (o, v) => o.quaternion.setFromUnitVectors(new V3(0, 1, 0), v);
-            // translate
             this.gMove = new THREE.Group();
             for (const [n, c, v] of axes) {
                 const m = mat(c);
@@ -169,14 +163,12 @@ GK.module('editor/editor', { runtime: false }, function (GK) {
             plane.material.side = THREE.DoubleSide; plane.material.opacity = 0.55;
             plane.rotation.x = -Math.PI / 2; plane.position.set(0.25, 0, 0.25);
             add(this.gMove, plane, 'txz', null);
-            // rotate (yaw)
             this.gRot = new THREE.Group();
             const ring = new THREE.Mesh(new THREE.TorusGeometry(1, 0.025, 6, 64), mat(0x3b82f6));
             ring.rotation.x = Math.PI / 2;
             add(this.gRot, ring, 'ry', null);
             const ringHit = new THREE.Mesh(new THREE.TorusGeometry(1, 0.12, 4, 32), hitMat); ringHit.rotation.x = Math.PI / 2;
             add(this.gRot, ringHit, 'ry', null); this.handles.push(ringHit);
-            // scale
             this.gScl = new THREE.Group();
             for (const [n, c, v] of axes) {
                 const m = mat(c);
@@ -220,7 +212,6 @@ GK.module('editor/editor', { runtime: false }, function (GK) {
                 o.material.color.copy(o.userData.handle === handle ? new THREE.Color(0xffff66) : o.material.userData.base);
             });
         }
-        /** Closest-point parameter along line (p + s*a) to ray (o + t*d). */
         static axisParam(p, a, o, d) {
             const w0 = new V3().subVectors(p, o);
             const b = a.dot(d), D = a.dot(w0), E = d.dot(w0);
@@ -309,7 +300,6 @@ GK.module('editor/editor', { runtime: false }, function (GK) {
         }
     }
 
-    // ================================================================ Editor
     class Editor extends U.Emitter {
         constructor(viewportEl) {
             super();
@@ -334,7 +324,6 @@ GK.module('editor/editor', { runtime: false }, function (GK) {
             this.dirty = false;
             this.pie = null;
 
-            // cameras
             this.persp = this.engine.camera;
             this.persp.far = 1500;
             this.ortho = new THREE.OrthographicCamera(-50, 50, 50, -50, 0.1, 2000);
@@ -369,7 +358,6 @@ GK.module('editor/editor', { runtime: false }, function (GK) {
         markDirty() { if (!this.dirty) { this.dirty = true; this.emit('dirty', true); } }
         clearDirty() { this.dirty = false; this.emit('dirty', false); }
 
-        /** Replace the current level with project data. */
         loadProject(data) {
             if (this.pie) this.stopPIE();
             this.selection.clear();
@@ -384,7 +372,6 @@ GK.module('editor/editor', { runtime: false }, function (GK) {
             this.log(`Loaded "${this.world.meta.name}" — ${this.world.countVoxels()} blocks, ${this.world.actors.length} actors`, 'success', 'LogWorld');
         }
 
-        // ------------------------------------------------------------ helpers & grid
         _helpers() {
             const s = this.engine.scene;
             this.cursorBox = new THREE.LineSegments(GK.Geo.edges(), new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9, depthTest: false }));
@@ -436,7 +423,6 @@ GK.module('editor/editor', { runtime: false }, function (GK) {
             }
         }
 
-        // ------------------------------------------------------------ selection
         selectedActors() {
             const out = [];
             for (const id of this.selection) { const a = this.world.getActor(id); if (a) out.push(a); }
@@ -498,7 +484,6 @@ GK.module('editor/editor', { runtime: false }, function (GK) {
             this.history.end();
             this.select(ids);
         }
-        /** Drop selected actors onto the surface below (Unreal's End key). */
         snapToFloor() {
             const sel = this.selectedActors();
             if (!sel.length) return;
@@ -522,7 +507,6 @@ GK.module('editor/editor', { runtime: false }, function (GK) {
         setGizmo(m) { this.gizmoMode = m; this.emit('gizmo'); }
         armPlacement(type) { this.placing = type; if (type) this.setMode('select'); this.emit('placing'); }
 
-        // ------------------------------------------------------------ camera
         _applyCamera() {
             const c = this.persp, s = this.cam;
             c.position.copy(s.pos);
@@ -566,7 +550,6 @@ GK.module('editor/editor', { runtime: false }, function (GK) {
             const target = ps ? new V3(ps.pos[0], ps.pos[1], ps.pos[2]) : new V3(0, 2, 0);
             this.cam.yaw = Math.atan2(1, 1) + Math.PI;
             const dist = Math.min(s * 0.45, 40) + 10;
-            // camera looks down its local -Z: forward = (-sin yaw, sin pitch, -cos yaw)
             const f = new V3(-Math.sin(this.cam.yaw) * Math.cos(this.cam.pitch), Math.sin(this.cam.pitch), -Math.cos(this.cam.yaw) * Math.cos(this.cam.pitch));
             this.cam.pos.copy(target).addScaledVector(f, -dist);
             this.orthoCenter.set(0, 0, 0);
@@ -574,14 +557,12 @@ GK.module('editor/editor', { runtime: false }, function (GK) {
             this._applyCamera();
         }
 
-        // ------------------------------------------------------------ picking
         rayAt(clientX, clientY) {
             const r = this.engine.renderer.domElement.getBoundingClientRect();
             const ndc = new THREE.Vector2(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1);
             this.raycaster.setFromCamera(ndc, this.activeCamera);
             return this.raycaster.ray;
         }
-        /** Returns {actorId?, voxel?, place?, point, normal} for what's under the cursor. */
         pick(clientX, clientY, opts) {
             opts = opts || {};
             const ray = this.rayAt(clientX, clientY);
@@ -598,7 +579,7 @@ GK.module('editor/editor', { runtime: false }, function (GK) {
                     point: new V3(o.x + d.x * vh.t, o.y + d.y * vh.t, o.z + d.z * vh.t), dist: vh.t
                 };
             }
-            if (d.y < -1e-6) { // ground plane
+            if (d.y < -1e-6) {
                 const t = -o.y / d.y;
                 const p = new V3(o.x + d.x * t, 0, o.z + d.z * t);
                 const x = Math.floor(p.x), z = Math.floor(p.z);
@@ -607,7 +588,6 @@ GK.module('editor/editor', { runtime: false }, function (GK) {
             return null;
         }
 
-        // ------------------------------------------------------------ viewport input
         _bindViewport() {
             const el = this.engine.renderer.domElement;
             el.addEventListener('contextmenu', e => e.preventDefault());
@@ -634,13 +614,12 @@ GK.module('editor/editor', { runtime: false }, function (GK) {
             if (e.button === 2) { this.mouse.right = true; this._rmbMoved = 0; return; }
             if (e.button === 1) { e.preventDefault(); this.mouse.middle = true; return; }
             if (e.button !== 0) return;
-            if (e.altKey && this.view === 'persp') { // orbit
+            if (e.altKey && this.view === 'persp') {
                 const hit = this.pick(e.clientX, e.clientY);
                 this._orbit = { pivot: hit ? hit.point.clone() : this.cam.pos.clone().addScaledVector(this.forward(), 12) };
                 return;
             }
             this.mouse.left = true;
-            // gizmo
             this.rayAt(e.clientX, e.clientY);
             const handle = this.gizmo.root.visible ? this.gizmo.pick(this.raycaster) : null;
             if (handle && this.gizmo.begin(handle, this.raycaster.ray)) { this._gizmoDrag = true; return; }
@@ -752,7 +731,6 @@ GK.module('editor/editor', { runtime: false }, function (GK) {
             if (moved) this._applyCamera();
         }
 
-        // ------------------------------------------------------------ view modes
         setViewMode(m) {
             this.viewMode = m;
             GK.VoxelMaterial.setWireframe(m === 'wireframe');
@@ -763,7 +741,6 @@ GK.module('editor/editor', { runtime: false }, function (GK) {
             this.emit('view');
         }
 
-        // ------------------------------------------------------------ Play In Editor
         startPIE() {
             if (this.pie) return;
             this.history.cancel();
@@ -816,7 +793,6 @@ GK.module('editor/editor', { runtime: false }, function (GK) {
             this.emit('pie', false);
         }
 
-        // ------------------------------------------------------------ frame
         tick(dt) {
             const eng = this.engine;
             if (this.pie) {
@@ -843,7 +819,6 @@ GK.module('editor/editor', { runtime: false }, function (GK) {
         }
     }
 
-    // ================================================================ Tools
     const Tools = {};
     const hot = { last: null, t: 0 };
 
@@ -856,7 +831,6 @@ GK.module('editor/editor', { runtime: false }, function (GK) {
         return { min, max };
     }
 
-    /** Cells of a brush stamp centred on c. */
     function stamp(c, size, shape) {
         const out = [];
         const r = (size - 1) / 2, lo = -Math.floor(r), hi = Math.ceil(r);
@@ -946,7 +920,6 @@ GK.module('editor/editor', { runtime: false }, function (GK) {
                 return;
             }
             if (ed._stroke && ed._stroke.plane && !ed._stroke.erase && b.tool === 'brush') {
-                // keep painting on the plane of the first click
                 const pl = ed._stroke.plane;
                 const n = pl.n, c = pl.c;
                 const plane = new THREE.Plane(n.clone(), -(n.x * (c.x + (n.x < 0 ? 1 : 0)) + n.y * (c.y + (n.y < 0 ? 1 : 0)) + n.z * (c.z + (n.z < 0 ? 1 : 0))));
@@ -1041,7 +1014,6 @@ GK.module('editor/editor', { runtime: false }, function (GK) {
         if (n) GK.Audio.play(st.erase ? 'break' : 'place');
     };
 
-    /** Flood-fill the connected region of same-type blocks on the clicked face plane. */
     Tools.flood = function (ed, hit) {
         if (!hit.voxel) return;
         const w = ed.world, H = ed.history, src = hit.voxel.id, dst = ed.build.blockId;

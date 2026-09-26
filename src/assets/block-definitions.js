@@ -1,8 +1,3 @@
-/**
- * Runtime view of the blocks asset. Keep behavior in this data object; systems
- * only consume its fields and never infer behavior from a numeric block id.
- * `category` groups blocks in the editor's content browser.
- */
 export const BLOCK_CATALOG_GUID = 'e3e2c252-d6a6-488b-966c-5ea51e6d0d01';
 
 export const BLOCKS = Object.freeze([

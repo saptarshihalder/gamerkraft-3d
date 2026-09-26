@@ -1,7 +1,3 @@
-/**
- * Runtime representations are deliberately owned by systems. The serialized
- * scene remains safe to JSON stringify because these maps are never components.
- */
 export class RepresentationSystems {
   constructor({ renderTerrain, buildPhysics, buildAudio } = {}) {
     this.renderTerrain = renderTerrain;

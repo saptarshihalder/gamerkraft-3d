@@ -3,8 +3,6 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 
-// Load the editor's classic-script runtime core into a fresh context, exactly as
-// index.html does (minus the DOM), and return its GK namespace.
 const CORE = ['src/boot.js', 'vendor/three.gk.js', 'src/core/util.js', 'src/core/blocks.js', 'src/core/world.js', 'src/core/actors.js'];
 function loadGK(files = CORE) {
   const ctx = { console, btoa, atob };
@@ -74,7 +72,6 @@ test('legacy v1/v2 voxel maps migrate to blocks and actors', () => {
   const w = GK.World.fromJSON({ version: 2, mapSize: 20, voxels: { '0,0,0': 2, '1,0,0': 18, '0,1,0': 10, '2,1,0': 12, '3,1,0': 11 } });
   assert.equal(w.getVoxel(0, 0, 0), GK.Blocks.idOf('grass'));
   assert.equal(w.getVoxel(1, 0, 0), GK.Blocks.idOf('water'));
-  // Values created inside the VM realm are copied out before strict comparison.
   assert.deepEqual(Array.from(w.actors, a => a.type).sort(), ['coin', 'goal', 'player_start']);
   assert.deepEqual(Array.from(w.findActors('player_start')[0].pos), [0.5, 1, 0.5]);
 });

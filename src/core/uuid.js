@@ -1,7 +1,3 @@
-/**
- * Create a stable, RFC 4122 v4 UUID without making persistence depend on a
- * renderer, DOM, or a particular entity implementation.
- */
 export function createUuid() {
   if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
 

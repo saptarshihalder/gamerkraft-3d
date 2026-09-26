@@ -1,4 +1,3 @@
-/** Backend-neutral render pass identifiers. Backends must preserve this order. */
 export const RenderPass = Object.freeze({
     SHADOWS: 'shadows',
     OPAQUE: 'opaque',
@@ -24,10 +23,6 @@ export const AssetKind = Object.freeze({
 
 let nextAssetId = 1;
 
-/**
- * An opaque, backend-independent reference to a GPU/render asset. Consumers
- * retain this handle rather than a Three.js/WebGL object.
- */
 export class AssetHandle {
     constructor(kind, label = '') {
         if (!Object.values(AssetKind).includes(kind)) throw new Error(`Unknown render asset kind: ${kind}`);

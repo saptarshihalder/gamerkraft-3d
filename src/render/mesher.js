@@ -1,12 +1,6 @@
 GK.module('render/mesher', function (GK) {
     'use strict';
 
-    /*
-     * Chunk mesher: builds one opaque + one transparent BufferGeometry per 16³
-     * chunk. Hidden faces are culled; each vertex gets baked ambient occlusion
-     * (0fps.net method) with anisotropy-aware quad flipping. Liquid surfaces
-     * sit slightly below the block top.
-     */
     const B = GK.Blocks;
     const U = GK.Util;
     const P = 18, P2 = P * P;
@@ -24,7 +18,6 @@ GK.module('render/mesher', function (GK) {
     ];
     const pd = (x, y, z) => x + z * P + y * P2;
 
-    // Neighbor delta per face, and AO sample deltas per face-vertex.
     FACES.forEach(face => {
         const n = face.n;
         face.nd = pd(n[0], n[1], n[2]);
@@ -99,11 +92,6 @@ GK.module('render/mesher', function (GK) {
 
     const Mesher = GK.Mesher = {};
 
-    /**
-     * Build geometry for chunk (cx, cy, cz). Geometry is in chunk-local
-     * coordinates; position the mesh at (cx*16, cy*16, cz*16).
-     * @returns {{opaque: THREE.BufferGeometry|null, transparent: THREE.BufferGeometry|null}|null}
-     */
     Mesher.buildChunk = function (world, cx, cy, cz) {
         const chunk = world.chunks.get(GK.World.ckey(cx, cy, cz));
         if (!chunk) return null;
@@ -136,7 +124,6 @@ GK.module('render/mesher', function (GK) {
                         const face = FACES[f];
                         const nid = pad[pi + face.nd];
                         if (nid && (OP[nid] || nid === id)) continue;
-                        // Liquid tops are lowered, so draw the side of a liquid under another liquid-free cell only.
                         const fd = face.kind === 'top' ? def.top : face.kind === 'bottom' ? def.bottom : def.side;
                         const c = B.linearColor(fd[0]);
                         const pattern = fd[1];

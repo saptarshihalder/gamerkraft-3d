@@ -1,6 +1,5 @@
 import { createUuid, isUuid } from './uuid.js';
 
-/** Serializable scene references. Asset identity is stable across source reimports. */
 export class AssetRegistry {
   #assets = new Map();
 
@@ -13,7 +12,6 @@ export class AssetRegistry {
     return asset;
   }
 
-  /** Refresh mutable import information without replacing the GUID referenced by scenes. */
   reimport(id, { type, uri, label, importer, dependencies } = {}) {
     const old = this.#assets.get(id);
     if (!old) throw new Error(`Unknown asset: ${id}`);

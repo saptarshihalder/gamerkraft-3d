@@ -1,21 +1,19 @@
 import { expect, test } from "@playwright/test";
 import { pathToFileURL } from "node:url";
 
-// First launch opens the Project Browser; close it to reach the editor.
 async function openEditor(page, url = "/") {
-  test.slow(); // CI renders WebGL on the CPU (SwiftShader), so give boot headroom
+  test.slow();
   const errors = [];
   page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
   page.on(
     "console",
     (m) => m.type() === "error" && errors.push(`console: ${m.text()}`),
   );
-  // Chromium-only: lets us interrupt V8 and report where the main thread is stuck.
   const cdp = await page.context().newCDPSession(page);
   const scripts = new Map();
   cdp.on("Debugger.scriptParsed", (s) => scripts.set(s.scriptId, s.url));
   await cdp.send("Debugger.enable");
-  await cdp.send("Debugger.setBreakpointsActive", { active: false }); // ignore stray `debugger;`
+  await cdp.send("Debugger.setBreakpointsActive", { active: false });
   await page.goto(url);
   try {
     await expect
@@ -93,13 +91,11 @@ test("packaging produces a standalone playable game", async ({
   page,
   context,
 }, testInfo) => {
-  // Software GL in CI makes booting and packaging slow.
   test.setTimeout(180_000);
   await openEditor(page);
   const file = testInfo.outputPath("packaged-game.html");
   await packageGame(page, file);
 
-  // Opened from file://, the game must need no sibling files or network.
   const result = await playPackaged(context, file);
   expect(result.voxels).toBeGreaterThan(0);
   expect(result.editorModules).toBe(0);

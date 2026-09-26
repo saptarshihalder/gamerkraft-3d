@@ -1,10 +1,4 @@
-/**
- * Deterministic seeded random numbers. Simulation, terrain generation, and
- * replays must never depend on Math.random(): the same seed has to produce
- * the same world on every machine and every run.
- */
 
-/** mulberry32: small, fast, and statistically fine for gameplay use. */
 export function createRng(seed = 1) {
   let state = seed >>> 0;
   const next = () => {
@@ -16,18 +10,13 @@ export function createRng(seed = 1) {
   };
   return {
     seed: state,
-    /** Float in [0, 1). */
     next,
-    /** Integer in [min, max] inclusive. */
     int(min, max) { return min + Math.floor(next() * (max - min + 1)); },
-    /** Pick one element of a non-empty array. */
     pick(items) { return items[Math.floor(next() * items.length)]; },
-    /** True with probability p. */
     chance(p) { return next() < p; }
   };
 }
 
-/** A 32-bit seed from anywhere (string labels, timestamps, user input). */
 export function toSeed(value) {
   if (typeof value === 'number' && Number.isFinite(value)) return value >>> 0;
   const text = String(value ?? '');

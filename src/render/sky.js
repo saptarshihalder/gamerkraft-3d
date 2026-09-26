@@ -3,7 +3,6 @@ GK.module('render/sky', function (GK) {
 
     const U = GK.Util;
 
-    // Sky keyframes indexed by sun elevation (sin of altitude). Colors are sRGB.
     const KEYS = [
         { e: -0.4, zen: 0x020309, hor: 0x080c1c, gnd: 0x040509, sun: 0x9fb4ff, sunI: 0.18, amb: 0.22, cloud: 0x1a2030 },
         { e: -0.08, zen: 0x0c1430, hor: 0x2b2542, gnd: 0x0a0a12, sun: 0x9fb4ff, sunI: 0.16, amb: 0.3, cloud: 0x3a3450 },
@@ -32,10 +31,6 @@ GK.module('render/sky', function (GK) {
 
     const Sky = GK.Sky = { PRESETS };
 
-    /**
-     * Resolve environment settings into concrete lighting values.
-     * All returned colors are linear THREE.Colors.
-     */
     Sky.compute = function (env, out) {
         out = out || {
             sunDir: new THREE.Vector3(), lightDir: new THREE.Vector3(),
@@ -45,11 +40,10 @@ GK.module('render/sky', function (GK) {
         };
         const preset = env.preset || 'day';
         const t = ((env.timeOfDay % 24) + 24) % 24;
-        const ang = (t - 6) / 12 * Math.PI;             // 6h sunrise, 12h noon, 18h sunset
+        const ang = (t - 6) / 12 * Math.PI;
         out.sunDir.set(Math.cos(ang), Math.sin(ang) * 0.93, 0.36).normalize();
         const el = out.sunDir.y;
 
-        // keyframe blend
         let k = 0;
         while (k < KEYS.length - 2 && el > KEYS[k + 1].e) k++;
         const k0 = KEYS[k], k1 = KEYS[k + 1];
@@ -66,7 +60,6 @@ GK.module('render/sky', function (GK) {
         out.sunVisible = el > -0.1 ? 1 : 0;
         out.sunSize = 0.0009;
 
-        // Light comes from the sun by day, the moon by night.
         if (el > -0.02) out.lightDir.copy(out.sunDir);
         else out.lightDir.set(-out.sunDir.x, -out.sunDir.y, out.sunDir.z).normalize();
 
@@ -90,7 +83,6 @@ GK.module('render/sky', function (GK) {
             out.clouds = 0; out.stars = 1;
         }
 
-        // sRGB → linear for shading
         [out.zenith, out.horizon, out.ground, out.lightColor, out.cloudColor].forEach(c => c.convertSRGBToLinear());
         out.lightIntensity = lightI * (env.sunIntensity != null ? env.sunIntensity : 1);
         out.hemiIntensity = amb * 0.9 * (env.ambient != null ? env.ambient : 1);
@@ -104,7 +96,7 @@ GK.module('render/sky', function (GK) {
         return out;
     };
 
-    const VERT = /* glsl */`
+    const VERT = `
 varying vec3 vDir;
 void main() {
     vDir = position;
@@ -112,7 +104,7 @@ void main() {
     gl_Position = vec4(p.xy, p.w * 0.99999, p.w);   // pin to the far plane
 }`;
 
-    const FRAG = /* glsl */`
+    const FRAG = `
 uniform vec3 uZenith;
 uniform vec3 uHorizon;
 uniform vec3 uGround;

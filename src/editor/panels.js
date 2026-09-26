@@ -3,8 +3,6 @@ GK.module('editor/panels', { runtime: false }, function (GK) {
 
     const U = GK.Util, B = GK.Blocks, A = GK.Actors, UI = GK.UI, h = UI.h;
 
-    // ================================================================ Thumbnails
-    /** Renders small 3D previews of blocks, actors and whole worlds with an offscreen renderer. */
     const Thumbs = GK.Thumbs = {
         cache: new Map(), queue: [], busy: false,
         _init() {
@@ -75,7 +73,6 @@ GK.module('editor/panels', { runtime: false }, function (GK) {
                 return url;
             }, cb);
         },
-        /** Overview render of a whole world (templates, project list). */
         world(key, worldOrFn, cb) {
             this.get('w' + key, () => {
                 this._init();
@@ -108,7 +105,6 @@ GK.module('editor/panels', { runtime: false }, function (GK) {
 
     const setBg = (el, url) => { if (url) { el.style.backgroundImage = `url(${url})`; el.innerHTML = ''; } };
 
-    // ================================================================ Panels
     class Panels {
         constructor(ed) {
             this.ed = ed;
@@ -142,7 +138,6 @@ GK.module('editor/panels', { runtime: false }, function (GK) {
             w.on('voxel', () => { if (ed.selVoxel) det(); });
         }
 
-        // ------------------------------------------------------------ live edit helpers
         editActor(id, patch, commit) {
             const ed = this.ed, a = ed.world.getActor(id);
             if (!a) return;
@@ -168,7 +163,6 @@ GK.module('editor/panels', { runtime: false }, function (GK) {
             }
         }
 
-        // ================================================================ left dock
         buildLeft() {
             const ed = this.ed, L = this.left;
             L.innerHTML = '';
@@ -270,7 +264,6 @@ GK.module('editor/panels', { runtime: false }, function (GK) {
             ]));
             if (L.tool === 'paint' || L.tool === 'raise') body.appendChild(this._blockPalette(() => L.blockId, id => { L.blockId = id; ed.emit('tool'); }));
             body.appendChild(h('div.help-text', 'Hold Left Mouse to sculpt. Shift inverts Raise/Lower.'));
-            // generator
             const g = this.genOpts || (this.genOpts = { seed: Math.floor(Math.random() * 99999), height: 14, scale: 0.035, water: 5, biome: 'temperate', trees: 0.6, clear: true });
             const rows = [
                 UI.propRow({ label: 'Seed', type: 'number', step: 1 }, () => g.seed, v => { g.seed = Math.round(v); }),
@@ -307,7 +300,6 @@ GK.module('editor/panels', { runtime: false }, function (GK) {
             }, UI.icon('trash-2', 13), 'Clear All Foliage')));
         }
 
-        // ================================================================ outliner
         buildOutliner() {
             const P = this.outliner;
             P.innerHTML = '';
@@ -389,7 +381,6 @@ GK.module('editor/panels', { runtime: false }, function (GK) {
             UI.prompt('Rename Actor', 'Name', a.name, v => { if (v.trim()) this.ed.history.modifyActor(a.id, { name: v.trim() }); });
         }
 
-        // ================================================================ details / world settings
         buildRight() {
             this.rightTabs = UI.tabs(this.details, [
                 { id: 'details', label: 'Details', icon: 'sliders-horizontal', build: b => { this.detBody = b; } },
@@ -532,7 +523,6 @@ GK.module('editor/panels', { runtime: false }, function (GK) {
             body.scrollTop = scroll;
         }
 
-        // ================================================================ bottom dock
         buildBottom() {
             this.bottomTabs = UI.tabs(this.bottom, [
                 { id: 'content', label: 'Content Browser', icon: 'folder-open', build: b => this.buildContent(b) },

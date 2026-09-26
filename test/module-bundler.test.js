@@ -12,11 +12,9 @@ test('a real contract-module graph flattens into a single import-free script', a
     load: file => readFile(file, 'utf8'),
     resolve: (spec, from) => path.resolve(path.dirname(from), spec)
   });
-  // Every static dependency must be inlined exactly once, shared ones included.
   for (const mod of ['scene-importer.js', 'scene.js', 'uuid.js', 'asset-registry.js', 'block-definitions.js']) {
     assert.equal(bundle.split(`${path.sep}${mod} ----`).length, 2, `${mod} is inlined exactly once`);
   }
-  // No module syntax may survive flattening.
   assert.doesNotMatch(bundle, /^[ \t]*import[ \t]/m);
   assert.doesNotMatch(bundle, /^[ \t]*export[ \t]/m);
 });

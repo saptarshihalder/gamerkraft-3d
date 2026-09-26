@@ -4,8 +4,6 @@ GK.module('core/world', function (GK) {
     const U = GK.Util;
     const B = GK.Blocks;
 
-    // Chunk keys are packed integers: fast Map lookups, no string building.
-    // Valid for chunk coords in [-64, 64) → worlds up to 1024 blocks wide / tall.
     const ckey = (cx, cy, cz) => ((cx + 64) * 128 + (cz + 64)) * 128 + (cy + 64);
     const ckeyParts = function (k) {
         const cy = (k % 128) - 64;
@@ -26,11 +24,11 @@ GK.module('core/world', function (GK) {
     const DEFAULT_SETTINGS = {
         game: {
             mode: 'reach_goal',
-            timeLimit: 0,            // seconds, 0 = none (survive mode: time to survive)
-            lives: 3,                // 0 = infinite
+            timeLimit: 0,
+            lives: 3,
             maxHealth: 3,
-            camera: 'third',         // third | first
-            interaction: 'shoot',    // none | shoot | build
+            camera: 'third',
+            interaction: 'shoot',
             requireAllCoins: false,
             objective: '',
             startMessage: '',
@@ -51,7 +49,7 @@ GK.module('core/world', function (GK) {
         env: {
             preset: 'day',
             timeOfDay: 13,
-            dayLength: 0,            // real-time minutes per in-game day, 0 = frozen
+            dayLength: 0,
             clouds: 0.45,
             fog: 0.3,
             sunIntensity: 1,
@@ -62,7 +60,6 @@ GK.module('core/world', function (GK) {
         build: { hotbar: ['grass', 'dirt', 'stone', 'planks', 'brick', 'glass', 'cobblestone', 'sand', 'leaves'] }
     };
 
-    // v1/v2 (single-file editor) block ids → v3 block ids / actor types
     const LEGACY_BLOCKS = { 1: 3, 2: 1, 3: 2, 4: 12, 5: 14, 6: 19, 8: 8, 9: 38, 18: 41, 20: 42 };
     const LEGACY_ACTORS = {
         7: 'tree_oak', 10: 'player_start', 11: 'goal', 12: 'coin', 13: 'spikes', 14: 'jump_pad',
@@ -97,14 +94,12 @@ GK.module('core/world', function (GK) {
             return x >= -h && x < h && z >= -h && z < h && y >= 0 && y < this.height;
         }
 
-        // ------------------------------------------------------------ voxels
         getVoxel(x, y, z) {
             if (y < 0 || y >= this.height) return 0;
             const c = this.chunks.get(ckey(x >> 4, y >> 4, z >> 4));
             return c ? c[(x & 15) | ((z & 15) << 4) | ((y & 15) << 8)] : 0;
         }
 
-        /** Returns the previous id when something changed, or -1 when nothing did. */
         setVoxel(x, y, z, id) {
             if (!this.inBounds(x, y, z)) return -1;
             id = id | 0;
@@ -128,7 +123,6 @@ GK.module('core/world', function (GK) {
             return prev;
         }
 
-        /** Group many voxel edits into a single 'chunks' event. */
         batch(fn) {
             if (this._batch) return fn();
             this._batch = new Set();
@@ -159,7 +153,6 @@ GK.module('core/world', function (GK) {
             return n;
         }
 
-        /** Highest y in column matching predicate (default: any non-air), or -1. */
         columnTop(x, z, pred) {
             for (let y = this.height - 1; y >= 0; y--) {
                 const id = this.getVoxel(x, y, z);
@@ -167,7 +160,6 @@ GK.module('core/world', function (GK) {
             }
             return -1;
         }
-        /** y coordinate an object standing on the column's highest solid block would have. */
         groundHeight(x, z) {
             return this.columnTop(Math.floor(x), Math.floor(z), id => B.SOLID[id] === 1) + 1;
         }
@@ -182,10 +174,6 @@ GK.module('core/world', function (GK) {
             });
         }
 
-        /**
-         * Voxel DDA raycast. Returns { x, y, z, id, nx, ny, nz, t } for the first
-         * voxel accepted by `pred(id)` (default: any non-air), or null.
-         */
         raycast(ox, oy, oz, dx, dy, dz, maxDist, pred) {
             const len = Math.hypot(dx, dy, dz) || 1;
             dx /= len; dy /= len; dz /= len;
@@ -206,7 +194,7 @@ GK.module('core/world', function (GK) {
                     const id = this.getVoxel(x, y, z);
                     if (id && (!pred || pred(id, x, y, z))) return { x, y, z, id, nx, ny, nz, t };
                 } else if ((y < 0 && sy <= 0) || (y >= H && sy >= 0)) {
-                    return null; // left the world vertically and moving away
+                    return null;
                 }
                 if (tmx < tmy) {
                     if (tmx < tmz) { x += sx; t = tmx; tmx += tdx; nx = -sx; ny = 0; nz = 0; }
@@ -217,7 +205,6 @@ GK.module('core/world', function (GK) {
             return null;
         }
 
-        /** True when the segment a→b is not blocked by opaque solid voxels. */
         lineOfSight(ax, ay, az, bx, by, bz) {
             const d = Math.hypot(bx - ax, by - ay, bz - az);
             if (d < 1e-6) return true;
@@ -225,7 +212,6 @@ GK.module('core/world', function (GK) {
             return !hit;
         }
 
-        // ------------------------------------------------------------ actors
         uniqueName(base) {
             const names = new Set(this.actors.map(a => a.name));
             for (let n = 1; ; n++) {
@@ -258,7 +244,6 @@ GK.module('core/world', function (GK) {
 
         getActor(id) { return this.actorById.get(id) || null; }
 
-        /** Patch fields: pos, rot, scale, name, props (merged), tags, hidden. */
         updateActor(id, patch) {
             const a = this.actorById.get(id);
             if (!a) return null;
@@ -275,7 +260,6 @@ GK.module('core/world', function (GK) {
             return a;
         }
 
-        /** Restore an actor to an exact snapshot (undo/redo). */
         restoreActor(snapshot) {
             const a = this.actorById.get(snapshot.id);
             if (!a) return this.addActor(U.clone(snapshot));
@@ -288,7 +272,6 @@ GK.module('core/world', function (GK) {
 
         findActors(type) { return this.actors.filter(a => a.type === type); }
 
-        // ------------------------------------------------------------ settings
         getSetting(path) { return U.getPath(this.settings, path); }
         setSetting(path, value) {
             U.setPath(this.settings, path, value);
@@ -302,8 +285,6 @@ GK.module('core/world', function (GK) {
             this.emit('resize', size);
         }
 
-        // ------------------------------------------------------------ PIE journal
-        /** Record every voxel change so a play session can be rolled back exactly. */
         beginSession() { this._journal = new Map(); }
         get inSession() { return !!this._journal; }
         endSession() {
@@ -318,7 +299,6 @@ GK.module('core/world', function (GK) {
             });
         }
 
-        // ------------------------------------------------------------ serialization
         clear() {
             this.chunks.clear();
             this.actors = [];
@@ -349,7 +329,6 @@ GK.module('core/world', function (GK) {
             };
         }
 
-        /** Load any supported project format (v3, or legacy v1/v2 voxel maps). */
         load(data) {
             if (!data || typeof data !== 'object') throw new Error('Invalid project data');
             this.chunks.clear();
@@ -376,7 +355,7 @@ GK.module('core/world', function (GK) {
                 const p = key.split(',').map(Number);
                 if (p.length !== 3 || p.some(v => !isFinite(v))) continue;
                 const bytes = U.rleDecode(U.base64ToBytes(chunks[key]), 4096);
-                for (let i = 0; i < 4096; i++) if (bytes[i] && !B.byId[bytes[i]]) bytes[i] = 0; // unknown ids
+                for (let i = 0; i < 4096; i++) if (bytes[i] && !B.byId[bytes[i]]) bytes[i] = 0;
                 this.chunks.set(ckey(p[0], p[1], p[2]), bytes);
             }
             if (data.meta) Object.assign(this.meta, data.meta);

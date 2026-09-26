@@ -2,7 +2,6 @@ import { createUuid } from '../core/uuid.js';
 import { BLOCK_CATALOG_GUID } from '../assets/block-definitions.js';
 import { Scene, SCENE_VERSION, createTerrainComponent } from './scene.js';
 
-/** Imports the old World.serialize payloads while making all new saves version 3. */
 export function importScene(payload) {
   if (!payload || typeof payload !== 'object') throw new TypeError('A scene payload is required.');
   if (payload.version === SCENE_VERSION) return new Scene(payload);
