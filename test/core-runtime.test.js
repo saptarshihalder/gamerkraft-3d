@@ -35,7 +35,7 @@ test('log filters by level, caps its buffer, and notifies listeners', () => {
   assert.deepEqual(log.tail(10).map(e => e.levelName), ['WARN', 'ERROR']);
   log.setLevel(LogLevel.Debug);
   log.info('a', '1'); log.info('a', '2'); log.info('a', '3');
-  assert.equal(log.size, 3); // ring buffer dropped the oldest
+  assert.equal(log.size, 3);
   unsubscribe();
   log.info('a', 'not seen');
   assert.equal(seen.length, 5);
@@ -57,7 +57,6 @@ test('terrain generation is deterministic, bounded, and playable', () => {
       assert.ok(x >= -half && x < half && z >= -half && z < half && y >= 0, `in bounds: ${key}`);
       assert.ok(validIds.has(id), `valid block id ${id}`);
     }
-    // Exactly one start pad and one goal: every world is playable.
     assert.equal(ids.filter(([, id]) => id === 10).length, 1);
     assert.equal(ids.filter(([, id]) => id === 11).length, 1);
   }

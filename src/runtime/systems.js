@@ -3,8 +3,6 @@ GK.module('runtime/systems', function (GK) {
 
     const U = GK.Util, B = GK.Blocks;
 
-    // ================================================================ Input
-    /** Unified keyboard / mouse / pointer-lock / gamepad / touch input. */
     class Input {
         constructor(el, opts) {
             this.el = el;
@@ -25,7 +23,7 @@ GK.module('runtime/systems', function (GK) {
         get locked() { return document.pointerLockElement === this.el; }
         requestLock() {
             if (this.locked || !this.el.requestPointerLock) return;
-            try { const p = this.el.requestPointerLock(); if (p && p.catch) p.catch(() => {}); } catch (e) { /* ignore */ }
+            try { const p = this.el.requestPointerLock(); if (p && p.catch) p.catch(() => {}); } catch (e) { }
         }
         exitLock() { if (this.locked && document.exitPointerLock) document.exitPointerLock(); }
 
@@ -80,7 +78,6 @@ GK.module('runtime/systems', function (GK) {
             this.pressed.clear();
         }
 
-        /** Consume an edge-triggered action or key code. */
         consume(name) {
             if (this.pressed.has(name)) { this.pressed.delete(name); return true; }
             return false;
@@ -95,7 +92,6 @@ GK.module('runtime/systems', function (GK) {
                 default: return false;
             }
         }
-        /** Movement vector: x = strafe right, y = forward. */
         move() {
             const k = this.keys;
             let x = (k.has('KeyD') ? 1 : 0) - (k.has('KeyA') ? 1 : 0);
@@ -106,7 +102,6 @@ GK.module('runtime/systems', function (GK) {
             if (l > 1) { x /= l; y /= l; }
             return { x, y };
         }
-        /** Look delta in radians for this frame (mouse + arrows + gamepad). */
         takeLook(dt) {
             const s = 0.0024 * this.sensitivity;
             let yaw = -this.look.dx * s, pitch = -this.look.dy * s;
@@ -143,7 +138,6 @@ GK.module('runtime/systems', function (GK) {
             this.gp.held = held;
         }
 
-        // ---- touch controls (mobile)
         addTouch(container) {
             if (this.touchEl) return;
             const el = this.touchEl = document.createElement('div');
@@ -196,7 +190,6 @@ GK.module('runtime/systems', function (GK) {
     Input.isTouchDevice = () => ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
     GK.Input = Input;
 
-    // ================================================================ Audio
     const Audio = GK.Audio = {
         ctx: null, master: null, sfx: null, musicBus: null, volume: 0.6, musicVolume: 0.5,
         ensure() {
@@ -276,7 +269,6 @@ GK.module('runtime/systems', function (GK) {
             }
         },
 
-        // ---- procedural music
         TRACKS: {
             calm: { bpm: 84, root: 57, scale: [0, 2, 4, 7, 9], prog: [0, 5, 3, 4], wave: 'triangle', bass: 'sine', density: 0.55 },
             action: { bpm: 132, root: 52, scale: [0, 3, 5, 7, 10], prog: [0, 0, 3, 5], wave: 'square', bass: 'sawtooth', density: 0.8 },
@@ -308,15 +300,9 @@ GK.module('runtime/systems', function (GK) {
         stopMusic() { if (this._music) { clearInterval(this._music); this._music = null; } }
     };
 
-    // ================================================================ Physics
     const Physics = GK.Physics = {};
     const EPS = 1e-4;
 
-    /**
-     * Move an axis-aligned box (bottom-center `pos`, half-width hw, height h) by
-     * `delta` against solid voxels and dynamic colliders ([{box: THREE.Box3, ref}]).
-     * Mutates pos. Returns { hx, hy, hz, ground, groundRef, ceiling }.
-     */
     Physics.move = function (world, pos, hw, h, delta, colliders, out) {
         out = out || {};
         out.hx = out.hy = out.hz = out.ground = out.ceiling = false;
@@ -367,7 +353,6 @@ GK.module('runtime/systems', function (GK) {
         else { out.hy = true; if (d < 0) { out.ground = true; out.groundRef = ref; } else out.ceiling = true; }
     }
 
-    /** Voxel ids overlapping a box (for liquids / ladders / hazards). */
     Physics.sampleBlocks = function (world, pos, hw, h, fn) {
         const x0 = Math.floor(pos.x - hw), x1 = Math.floor(pos.x + hw - EPS);
         const y0 = Math.floor(pos.y), y1 = Math.floor(pos.y + h - EPS);

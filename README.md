@@ -73,7 +73,7 @@ vendor/               three.js r128 (wrapped for the registry), lucide icons (ed
 `src/render/{contracts,renderer,three-webgl-renderer}.js`, `src/audio`, `src/network` and
 `src/world` are backend-neutral ES modules (renderer/physics/input/network contracts, UUID asset
 registry, seeded RNG, structured log, scene format) covered by the Node test suite. The v3
-editor does not use them yet; see [ARCHITECTURE.md](ARCHITECTURE.md).
+editor does not use them yet.
 
 The console API is exposed as `window.GK` (e.g. `GK.editor`, `GK.App`, `GK.World`).
 
@@ -94,8 +94,7 @@ python3 -m http.server 8000   # then open http://localhost:8000
 | `npm run build` | Validates and cooks `assets/`, writes `dist/browser/` including `GamerKraft_Editor.html`, a single-file offline editor |
 | `npm run test:smoke` | Playwright smoke tests against `dist/browser` (set `GK_CHROMIUM` to use a system Chromium) |
 
-Contribution workflow, release process and history: [CONTRIBUTING.md](CONTRIBUTING.md),
-[RELEASES.md](RELEASES.md), [CHANGELOG.md](CHANGELOG.md), [ROADMAP.md](ROADMAP.md).
+Contribution workflow and history: [CONTRIBUTING.md](CONTRIBUTING.md), [CHANGELOG.md](CHANGELOG.md).
 
 ## Deployment
 

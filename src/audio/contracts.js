@@ -1,3 +1,2 @@
-/** Audio devices expose source and mix routing without leaking WebAudio nodes. */
 export class AudioMixer { setGain(_gain) { throw new Error('AudioMixer#setGain must be implemented'); } connect(_destination) { throw new Error('AudioMixer#connect must be implemented'); } }
 export class AudioSource { play(_cue, _options) { throw new Error('AudioSource#play must be implemented'); } stop() { throw new Error('AudioSource#stop must be implemented'); } setMixer(_mixer) { throw new Error('AudioSource#setMixer must be implemented'); } }

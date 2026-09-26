@@ -4,7 +4,6 @@ GK.module('editor/templates', { runtime: false }, function (GK) {
     const U = GK.Util, B = GK.Blocks, A = GK.Actors;
     const id = k => B.byKey[k].id;
 
-    // ================================================================ Terrain
     const BIOMES = {
         temperate: { top: 'grass', sub: 'dirt', shore: 'sand', peak: 'stone', snowline: 0.8, liquid: 'water', flora: ['tree_oak', 'tree_oak', 'tree_pine', 'bush', 'rock', 'flower', 'grass_tuft', 'grass_tuft'] },
         desert: { top: 'sand', sub: 'sand', shore: 'sand', peak: 'clay', snowline: 2, liquid: 'water', flora: ['rock', 'rock', 'bush'] },
@@ -15,10 +14,6 @@ GK.module('editor/templates', { runtime: false }, function (GK) {
 
     const Terrain = GK.Terrain = { BIOMES };
 
-    /**
-     * Fill the world with procedural terrain. o: {seed,height,scale,water,biome,trees}
-     * set(x,y,z,id) writes a voxel; add(actorData) adds an actor.
-     */
     Terrain.generate = function (world, o, set, add) {
         const bio = BIOMES[o.biome] || BIOMES.temperate;
         const N = U.Noise(o.seed), rng = U.RNG(o.seed + 7);
@@ -72,7 +67,6 @@ GK.module('editor/templates', { runtime: false }, function (GK) {
                 }
                 Terrain.generate(w, g, (x, y, z, b) => Hs.voxel(x, y, z, b), d => Hs.addActor(d));
             });
-            // keep the player start on the surface (same undo step)
             for (const a of w.findActors('player_start')) Hs.modifyActor(a.id, { pos: [a.pos[0], w.groundHeight(a.pos[0], a.pos[2]), a.pos[2]] });
             Hs.end();
             p.close();
@@ -80,7 +74,6 @@ GK.module('editor/templates', { runtime: false }, function (GK) {
         }, 30);
     };
 
-    // ================================================================ template helpers
     function mk(size, meta, settings) {
         const w = new GK.World({ size });
         w.meta.template = meta.template;
@@ -99,7 +92,6 @@ GK.module('editor/templates', { runtime: false }, function (GK) {
     const add = (w, type, x, y, z, props, extra) => w._addSilently(Object.assign({ type, pos: [x, y, z], props: props || {} }, extra || {}));
     const floor = (w, b, y) => { const h = w.size / 2; fill(w, -h, y || 0, -h, h - 1, y || 0, h - 1, b); };
 
-    // ================================================================ templates
     const T = [];
 
     T.push({
@@ -127,7 +119,6 @@ GK.module('editor/templates', { runtime: false }, function (GK) {
             add(w, 'player_start', 0.5, gh(0, 24), 24.5, {}, { rot: 180 });
             add(w, 'sign', 3.5, gh(3, 22), 22.5, { text: 'Collect coins and climb to the flag! Space = jump, Shift = sprint.' }, { rot: 180 });
             for (let z = 20; z >= 12; z -= 2) add(w, 'coin', 0.5, gh(0, z), z + 0.5);
-            // stepping platforms rising in a zig-zag
             const steps = [[0, 8, 2], [4, 5, 3], [8, 2, 4], [8, -3, 5], [4, -6, 6], [0, -9, 7], [-4, -12, 9], [-9, -12, 11]];
             steps.forEach(([x, z, y], i) => {
                 const base = gh(x, z) - 1;
@@ -137,7 +128,6 @@ GK.module('editor/templates', { runtime: false }, function (GK) {
             });
             add(w, 'jump_pad', -3.5, gh(-4, -6), -5.5, { height: 9 });
             add(w, 'moving_platform', -14.5, gh(-9, -12) + 10, -12.5, { moveX: 0, moveZ: -10, speed: 3 }, { scale: [3, 0.5, 3] });
-            // goal tower
             const tx = -15, tz = -26, tb = gh(tx, tz) - 1;
             fill(w, tx - 2, tb, tz - 2, tx + 2, tb + 10, tz + 2, 'stone_brick');
             fill(w, tx - 1, tb + 1, tz - 1, tx + 1, tb + 9, tz + 1, 0);
@@ -254,7 +244,7 @@ GK.module('editor/templates', { runtime: false }, function (GK) {
             const vis = new Set(), parent = {}, depth = {}, order = [];
             const stack = [[0, 0]]; vis.add('0,0'); depth['0,0'] = 0;
             const carve = (cx, cz) => fill(w, o + cx * S + 1, 2, o + cz * S + 1, o + cx * S + S - 1, 5, o + cz * S + S - 1, 0);
-            const cc = c => o + c * S + 4; // continuous cell center
+            const cc = c => o + c * S + 4;
             carve(0, 0);
             while (stack.length) {
                 const [cx, cz] = stack[stack.length - 1];
@@ -263,7 +253,6 @@ GK.module('editor/templates', { runtime: false }, function (GK) {
                 const [nx, nz] = rng.pick(nb);
                 vis.add(nx + ',' + nz); parent[nx + ',' + nz] = [cx, cz]; depth[nx + ',' + nz] = depth[cx + ',' + cz] + 1; order.push([nx, nz]);
                 carve(nx, nz);
-                // 3-wide passage through the shared wall
                 if (nx !== cx) { const W = o + Math.max(cx, nx) * S; fill(w, W, 2, o + cz * S + 3, W, 4, o + cz * S + 5, 0); }
                 else { const W = o + Math.max(cz, nz) * S; fill(w, o + cx * S + 3, 2, W, o + cx * S + 5, 4, W, 0); }
                 stack.push([nx, nz]);
@@ -273,11 +262,9 @@ GK.module('editor/templates', { runtime: false }, function (GK) {
             const [gx, gz] = center(far[0], far[1]);
             add(w, 'goal', gx, 2, gz);
             add(w, 'gem', gx + 1.5, 2, gz + 1.5, { value: 1000, color: '#facc15' });
-            // lock the goal room with a red door
             const p = parent[far[0] + ',' + far[1]];
             if (far[0] !== p[0]) add(w, 'door', o + Math.max(far[0], p[0]) * S + 0.5, 2, o + far[1] * S + 4.5, { lock: 'red' }, { rot: 90, scale: [3, 1.5, 1] });
             else add(w, 'door', o + far[0] * S + 4.5, 2, o + Math.max(far[1], p[1]) * S + 0.5, { lock: 'red' }, { rot: 0, scale: [3, 1.5, 1] });
-            // key in a distant dead end away from the goal
             const dead = order.filter(c => c !== far && !order.some(d => parent[d[0] + ',' + d[1]] && parent[d[0] + ',' + d[1]][0] === c[0] && parent[d[0] + ',' + d[1]][1] === c[1]));
             const keyCell = dead.sort((a, b) => depth[b[0] + ',' + b[1]] - depth[a[0] + ',' + a[1]]).find(c => Math.abs(c[0] - far[0]) + Math.abs(c[1] - far[1]) > 3) || dead[0] || [C - 1, 0];
             const [kx, kz] = center(keyCell[0], keyCell[1]);
@@ -333,7 +320,6 @@ GK.module('editor/templates', { runtime: false }, function (GK) {
     GK.Templates = {
         list: T,
         get: tid => T.find(t => t.id === tid),
-        /** Build a template into project JSON. */
         create(tid, name) {
             const t = GK.Templates.get(tid) || T[0];
             const w = t.build();

@@ -3,7 +3,6 @@ GK.module('runtime/player', function (GK) {
 
     const U = GK.Util;
 
-    /** Entry point for packaged (exported) games. */
     GK.Runtime = {
         boot(project, opts) {
             opts = opts || {};
@@ -63,7 +62,6 @@ GK.module('runtime/player', function (GK) {
                     '<br>Made with GamerKraft Engine ' + GK.version
             });
 
-            // idle orbit camera behind the title screen
             let orbit = 0, last = performance.now();
             const center = new THREE.Vector3(0, 4, 0);
             const loop = now => {

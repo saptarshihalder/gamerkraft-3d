@@ -1,8 +1,3 @@
-/**
- * Structured engine logging: categorized, leveled, and observable. Systems
- * log through this instead of the browser console so the developer console,
- * tests, and future telemetry can all subscribe to one stream.
- */
 export const LogLevel = Object.freeze({ Debug: 0, Info: 1, Warn: 2, Error: 3 });
 
 const LEVEL_NAMES = ['DEBUG', 'INFO', 'WARN', 'ERROR'];
@@ -29,11 +24,9 @@ export function createLog({ capacity = 500 } = {}) {
     info: (category, message) => write(LogLevel.Info, category, message),
     warn: (category, message) => write(LogLevel.Warn, category, message),
     error: (category, message) => write(LogLevel.Error, category, message),
-    /** Subscribe to new entries; returns an unsubscribe function. */
     onEntry(listener) { listeners.add(listener); return () => listeners.delete(listener); },
     setLevel(level) { minLevel = level; },
     getLevel() { return minLevel; },
-    /** Most recent entries, newest last. */
     tail(count = 50) { return entries.slice(-count); },
     get size() { return entries.length; }
   };

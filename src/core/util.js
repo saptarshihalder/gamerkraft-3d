@@ -14,7 +14,6 @@ GK.module('core/util', function (GK) {
     U.snap = (v, s) => (s > 0 ? Math.round(v / s) * s : v);
     U.round = (v, d = 3) => { const m = Math.pow(10, d); return Math.round(v * m) / m; };
 
-    /** Integer hash → float in [0, 1). Stable across runs. */
     U.hash3 = function (x, y, z) {
         let h = (x * 374761393 + y * 668265263 + z * 2147483647) | 0;
         h = Math.imul(h ^ (h >>> 13), 1274126177);
@@ -27,7 +26,6 @@ GK.module('core/util', function (GK) {
         return h >>> 0;
     };
 
-    /** Seeded PRNG (mulberry32) with helpers. */
     U.RNG = function (seed) {
         let a = (typeof seed === 'string' ? U.hashStr(seed) : seed >>> 0) || 1;
         const next = function () {
@@ -43,7 +41,6 @@ GK.module('core/util', function (GK) {
         return next;
     };
 
-    /** 2D value noise + fBm, seeded. */
     U.Noise = function (seed) {
         const rng = U.RNG(seed);
         const perm = new Uint8Array(512);
@@ -58,7 +55,7 @@ GK.module('core/util', function (GK) {
             const xf = x - xi, yf = y - yi;
             const u = fade(xf), w = fade(yf);
             const a = v(xi, yi), b = v(xi + 1, yi), c = v(xi, yi + 1), d = v(xi + 1, yi + 1);
-            return U.lerp(U.lerp(a, b, u), U.lerp(c, d, u), w); // 0..1
+            return U.lerp(U.lerp(a, b, u), U.lerp(c, d, u), w);
         };
         const fbm2 = function (x, y, octaves = 4, lacunarity = 2, gain = 0.5) {
             let amp = 1, freq = 1, sum = 0, norm = 0;
@@ -79,7 +76,6 @@ GK.module('core/util', function (GK) {
         return { noise2, fbm2, ridged2 };
     };
 
-    /** Minimal event emitter. on() returns an unsubscribe function. */
     U.Emitter = class Emitter {
         constructor() { this._ev = Object.create(null); }
         on(name, fn) {
@@ -126,7 +122,6 @@ GK.module('core/util', function (GK) {
         }
         o[keys[keys.length - 1]] = value;
     };
-    /** Recursively fill missing keys of `target` from `defaults`. */
     U.defaults = function (target, defaults) {
         for (const k of Object.keys(defaults)) {
             const d = defaults[k];
@@ -137,13 +132,11 @@ GK.module('core/util', function (GK) {
     };
     U.escapeHTML = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-    /** sRGB hex/string → linear THREE.Color (renderer runs in linear space with sRGB output). */
     U.color = function (c) {
         return new THREE.Color(c).convertSRGBToLinear();
     };
     U.hexString = n => '#' + (n >>> 0).toString(16).padStart(6, '0').slice(-6);
 
-    // ---- binary helpers (voxel serialization) ----
     U.bytesToBase64 = function (bytes) {
         let s = '';
         const CH = 0x8000;
@@ -156,7 +149,6 @@ GK.module('core/util', function (GK) {
         for (let i = 0; i < s.length; i++) out[i] = s.charCodeAt(i);
         return out;
     };
-    /** RLE as [count(1..255), value] pairs. */
     U.rleEncode = function (data) {
         const out = [];
         let i = 0;
@@ -192,7 +184,6 @@ GK.module('core/util', function (GK) {
     };
     U.slug = s => (String(s || 'game').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'game');
 
-    /** localStorage wrappers that never throw (private mode / quota). */
     U.store = {
         get(key, fallback) {
             try { const v = localStorage.getItem(key); return v == null ? fallback : JSON.parse(v); }
@@ -202,6 +193,6 @@ GK.module('core/util', function (GK) {
             try { localStorage.setItem(key, JSON.stringify(value)); return true; }
             catch (e) { return false; }
         },
-        remove(key) { try { localStorage.removeItem(key); } catch (e) { /* ignore */ } }
+        remove(key) { try { localStorage.removeItem(key); } catch (e) { } }
     };
 });

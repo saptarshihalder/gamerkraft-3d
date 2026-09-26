@@ -1,11 +1,3 @@
-/*
- * GamerKraft Engine — bootstrap & module registry.
- *
- * Every library and engine module is registered as a factory function. The
- * registry keeps those functions so the packager can rebuild a standalone,
- * fully offline game file from their live source text (Function#toString).
- * This works identically over http(s) and file:// — no fetch() required.
- */
 (function gkBoot(root) {
     'use strict';
     if (root.GK && root.GK.__booted) return;
@@ -35,10 +27,6 @@
 
     GK.bootSource = '(' + gkBoot.toString() + ')(typeof window !== "undefined" ? window : this);';
 
-    /**
-     * Re-emit loadable JavaScript for the registered libs + modules.
-     * @param {{runtimeOnly?: boolean}} options
-     */
     GK.bundle = function (options) {
         const runtimeOnly = !!(options && options.runtimeOnly);
         const parts = [GK.bootSource];

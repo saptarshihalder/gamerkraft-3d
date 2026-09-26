@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-/** Syntax-check every JavaScript file under src/ and tools/ with `node --check`. */
 import { readdir } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';

@@ -11,9 +11,5 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Review changed dependencies
-        # Requires the repository's Dependency graph (Settings → Advanced
-        # Security) to be enabled; until it is, the action errors on every PR.
-        # Keep the check non-blocking so it reports findings without failing
-        # CI, and remove this once the Dependency graph is switched on.
         continue-on-error: true
         uses: actions/dependency-review-action@v4

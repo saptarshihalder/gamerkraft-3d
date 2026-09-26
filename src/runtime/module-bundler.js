@@ -1,25 +1,8 @@
-/**
- * Flatten a static ES-module graph into one dependency-ordered script that
- * needs no module resolution. Exported games and the offline editor build are
- * single HTML files (often opened from file://), where relative module
- * specifiers have nothing to resolve against.
- *
- * The patterns are line-anchored so only module-level statements match, never
- * code inside strings or comments. The whole src tree keeps to this statement
- * style; anything else (default exports, bare imports, `export *`) is
- * rejected loudly rather than mis-bundled.
- */
 const MODULE_IMPORT_RE = /^[ \t]*import[ \t]+([\s\S]*?)[ \t]*from[ \t]*['"]([^'"]+)['"][ \t]*;?[ \t]*$/gm;
 const MODULE_REEXPORT_RE = /^[ \t]*export[ \t]*(\{[^}]*\})[ \t]*from[ \t]*['"]([^'"]+)['"][ \t]*;?[ \t]*$/gm;
 const MODULE_EXPORT_LIST_RE = /^[ \t]*export[ \t]*\{[^}]*\}[ \t]*;?[ \t]*$/gm;
 const MODULE_EXPORT_DECL_RE = /^([ \t]*)export[ \t]+(?=(?:async[ \t]+)?(?:const|let|var|function|class)\b)/gm;
 
-/**
- * @param {string} entry - reference to the entry module (URL or file path).
- * @param {{ load: (ref: string) => Promise<string>, resolve: (spec: string, from: string) => string, label?: (ref: string) => string }} io
- *   `load` returns a module's source, `resolve` turns an import specifier into
- *   a reference, `label` names a module in the bundle header comments.
- */
 export async function bundleModules(entry, { load, resolve, label = ref => ref }) {
     const emitted = new Set();
     const ordered = [];
@@ -39,8 +22,6 @@ export async function bundleModules(entry, { load, resolve, label = ref => ref }
         }
         for (const dep of deps) await visit(dep);
 
-        // Dependencies are inlined above, so named bindings already resolve;
-        // only `as` renames need a fresh binding.
         const aliasBindings = (clause, statement) => {
             const named = /^\{([\s\S]*)\}$/.exec(clause.trim());
             if (!named) throw new Error(`Unsupported clause in ${ref}: ${statement.trim()}`);

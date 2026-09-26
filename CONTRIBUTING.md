@@ -26,7 +26,7 @@ Serve `dist/browser` after a build to inspect the production package. Do not com
 
 ## Versioning and releases
 
-GamerKraft follows [Semantic Versioning 2.0.0](https://semver.org/): patch releases fix compatible bugs, minor releases add backward-compatible functionality, and major releases may make breaking changes. See [RELEASES.md](RELEASES.md) for the release process and [CHANGELOG.md](CHANGELOG.md) for release notes.
+GamerKraft follows [Semantic Versioning 2.0.0](https://semver.org/): patch releases fix compatible bugs, minor releases add backward-compatible functionality, and major releases may make breaking changes. See [CHANGELOG.md](CHANGELOG.md) for release notes.
 
 ## Reporting vulnerabilities
 

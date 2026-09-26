@@ -1,7 +1,6 @@
 import { DEFAULT_RENDER_PASSES, createMaterialHandle, createMeshHandle, createShaderHandle, createTextureHandle } from './contracts.js';
 import { Renderer } from './renderer.js';
 
-/** Three.js/WebGL implementation of the renderer contract. */
 export class ThreeWebGLRenderer extends Renderer {
     constructor({ three = globalThis.THREE, container, antialias = true, pixelRatio = globalThis.devicePixelRatio || 1 } = {}) {
         super();
@@ -45,9 +44,6 @@ export class ThreeWebGLRenderer extends Renderer {
         if (!this.frame) throw new Error('endFrame() requires an active frame');
         const frame = this.frame;
         this.frame = null;
-        // Three.js owns WebGL shadow, opaque, and transparent scheduling. The
-        // contract still records all passes so alternate backends can implement
-        // explicit command encoders for every pass without changing callers.
         if (frame.submission) this.device.render(frame.submission.scene, frame.submission.camera);
         const info = this.device.info;
         this.lastDiagnostics = {

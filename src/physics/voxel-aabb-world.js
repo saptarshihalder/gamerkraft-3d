@@ -1,6 +1,5 @@
 import { PhysicsQuery, PhysicsWorld } from './contracts.js';
 
-/** Initial backend: swept axis movement against solid unit voxels. */
 export class VoxelAabbPhysicsWorld extends PhysicsWorld {
   constructor({ isSolidAt }) { super(); this.isSolidAt = isSolidAt; this.colliders = new Set(); this.queries = new VoxelAabbQuery(isSolidAt); }
   createCollider(descriptor) { const collider = Object.freeze({ ...descriptor, id: `voxel-${this.colliders.size}` }); this.colliders.add(collider); return collider; }

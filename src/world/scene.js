@@ -4,7 +4,6 @@ import { createUuid, isUuid } from '../core/uuid.js';
 export const SCENE_VERSION = 3;
 const identityTransform = () => ({ position: [0, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] });
 
-/** Pure scene data. Components may contain JSON only; runtime handles never enter this graph. */
 export class Scene {
   constructor({ id = createUuid(), assets = [], entities = [] } = {}) {
     if (!isUuid(id)) throw new TypeError('Scene identifiers must be UUIDs.');

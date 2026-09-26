@@ -1,10 +1,5 @@
 import { DEFAULT_RENDER_PASSES } from './contracts.js';
 
-/**
- * Renderer contract implemented by browser and future native backends.
- * Game, world, and UI code communicate with rendering exclusively through this
- * lifecycle and never directly own a graphics device.
- */
 export class Renderer {
     initialize() { throw new Error('Renderer.initialize() must be implemented by a backend'); }
     beginFrame() { throw new Error('Renderer.beginFrame() must be implemented by a backend'); }
