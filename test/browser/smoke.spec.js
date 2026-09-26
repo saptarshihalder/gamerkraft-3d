@@ -3,10 +3,47 @@ import { pathToFileURL } from "node:url";
 
 // First launch opens the Project Browser; close it to reach the editor.
 async function openEditor(page, url = "/") {
+  test.slow(); // CI renders WebGL on the CPU (SwiftShader), so give boot headroom
+  const errors = [];
+  page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
+  page.on(
+    "console",
+    (m) => m.type() === "error" && errors.push(`console: ${m.text()}`),
+  );
+  // Chromium-only: lets us interrupt V8 and report where the main thread is stuck.
+  const cdp = await page.context().newCDPSession(page);
+  const scripts = new Map();
+  cdp.on("Debugger.scriptParsed", (s) => scripts.set(s.scriptId, s.url));
+  await cdp.send("Debugger.enable");
+  await cdp.send("Debugger.setBreakpointsActive", { active: false }); // ignore stray `debugger;`
   await page.goto(url);
-  await expect
-    .poll(() => page.evaluate(() => Boolean(window.GK && window.GK.editor)))
-    .toBe(true);
+  try {
+    await expect
+      .poll(() => page.evaluate(() => Boolean(window.GK && window.GK.editor)), {
+        timeout: 30_000,
+      })
+      .toBe(true);
+  } catch (err) {
+    const paused = new Promise((r) => cdp.once("Debugger.paused", r));
+    await cdp.send("Debugger.pause");
+    const hit = await Promise.race([
+      paused,
+      new Promise((r) => setTimeout(r, 5_000)),
+    ]);
+    const where = hit
+      ? hit.callFrames
+          .map(
+            (f) =>
+              `  ${f.functionName || "(anonymous)"}  ${scripts.get(f.location.scriptId) || "?"}  line ${f.location.lineNumber + 1} col ${f.location.columnNumber + 1}`,
+          )
+          .join("\n")
+      : "  (no JS ran within 5s: idle, or stuck inside a native/WebGL call)";
+    await cdp.send("Debugger.resume").catch(() => {});
+    throw new Error(
+      `${err.message}\n\nMain thread was in:\n${where}\n\nPage errors:\n  ${errors.slice(0, 10).join("\n  ") || "none"}`,
+    );
+  }
+  await cdp.detach();
   const browser = page.locator(".modal-back");
   if (await browser.isVisible().catch(() => false)) {
     await page.keyboard.press("Escape");
