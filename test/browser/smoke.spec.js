@@ -168,3 +168,107 @@ test("saved projects reopen after a reload", async ({ page }) => {
     )
     .toEqual(["Smoke Save", 36]);
 });
+
+test("the path tracer renders stills, animations and the viewport", async ({
+  page,
+}) => {
+  test.setTimeout(300_000);
+  const errors = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await openEditor(page);
+  await page.evaluate(() => {
+    const ed = window.GK.editor;
+    window.GK.App.newProject("dungeon", "Render Smoke");
+    ed.cam.pos.set(4, 9, 14);
+    ed.cam.yaw = 0.3;
+    ed.cam.pitch = -0.5;
+    ed._applyCamera();
+  });
+
+  const still = await page.evaluate(async () => {
+    const r = await window.GK.RenderStudio.renderImage(window.GK.editor, {
+      preset: "custom",
+      width: 96,
+      height: 54,
+      samples: 4,
+    });
+    const bmp = await createImageBitmap(r.blob);
+    const c = new OffscreenCanvas(bmp.width, bmp.height);
+    const g = c.getContext("2d");
+    g.drawImage(bmp, 0, 0);
+    const px = g.getImageData(0, 0, bmp.width, bmp.height).data;
+    let sum = 0;
+    let sq = 0;
+    for (let i = 0; i < px.length; i += 4) {
+      const l = px[i] + px[i + 1] + px[i + 2];
+      sum += l;
+      sq += l * l;
+    }
+    const n = px.length / 4;
+    return {
+      size: [bmp.width, bmp.height],
+      samples: r.samples,
+      type: r.blob.type,
+      mean: sum / n,
+      variance: sq / n - (sum / n) ** 2,
+    };
+  });
+  expect(still.size).toEqual([96, 54]);
+  expect(still.samples).toBe(4);
+  expect(still.type).toBe("image/png");
+  expect(still.mean).toBeGreaterThan(3);
+  expect(still.variance).toBeGreaterThan(10);
+
+  await page.evaluate(() => {
+    const set = (k, v) => window.GK.editor.world.setSetting("render." + k, v);
+    set("preset", "custom");
+    set("width", 64);
+    set("height", 36);
+    set("samples", 2);
+    set("anim.frames", 3);
+    set("anim.samples", 1);
+    set("anim.fps", 12);
+    set("anim.output", "both");
+  });
+  await page.keyboard.press("Alt+KeyR");
+  await expect(page.locator(".rs-win")).toBeVisible();
+  await page.click(".rs-buttons .btn.primary");
+  await expect(page.locator(".rs-status-text")).toContainText("Finished", {
+    timeout: 120_000,
+  });
+  const png = page.waitForEvent("download");
+  await page.click(".rs-buttons button:has-text('Save PNG')");
+  expect((await png).suggestedFilename()).toBe("render-smoke_render.png");
+
+  await page.click(".rs-tab:has-text('Animation')");
+  const video = page.waitForEvent("download", {
+    predicate: (d) => d.suggestedFilename().endsWith(".webm"),
+    timeout: 180_000,
+  });
+  const frames = page.waitForEvent("download", {
+    predicate: (d) => d.suggestedFilename().endsWith("_frames.zip"),
+    timeout: 180_000,
+  });
+  await page.click(".rs-buttons .btn.primary");
+  expect(await (await video).path()).toBeTruthy();
+  expect(await (await frames).path()).toBeTruthy();
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".rs-win")).toHaveCount(0);
+
+  await page.evaluate(() => {
+    window.GK.editor.world.setSetting("render.viewportScale", 0.25);
+    window.GK.App.console("r.pathtrace 1");
+  });
+  const samples = () =>
+    page.evaluate(() => window.GK.RenderStudio.viewport.pt.samples);
+  await expect.poll(samples, { timeout: 60_000 }).toBeGreaterThan(2);
+  await expect(page.locator("#pt-badge")).toContainText("spp");
+  const before = await samples();
+  await page.evaluate(() =>
+    window.GK.editor.history.voxel(0, 12, 0, window.GK.Blocks.idOf("glow")),
+  );
+  await expect.poll(samples).toBeLessThan(before);
+  await page.evaluate(() => window.GK.editor.setViewMode("lit"));
+  await expect(page.locator("canvas.pt-canvas")).toHaveCount(0);
+  expect(errors).toEqual([]);
+});

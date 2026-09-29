@@ -104,7 +104,9 @@ void main() {
     gl_Position = vec4(p.xy, p.w * 0.99999, p.w);   // pin to the far plane
 }`;
 
-    const FRAG = `
+    // Sky radiance for a view direction; sunDisk scales the solar disk so the path tracer can leave
+    // it out of rays whose sunlight is already sampled directly.
+    const SKY_GLSL = `
 uniform vec3 uZenith;
 uniform vec3 uHorizon;
 uniform vec3 uGround;
@@ -116,19 +118,17 @@ uniform float uSunVisible;
 uniform float uStars;
 uniform float uClouds;
 uniform float uTime;
-varying vec3 vDir;
 float sh(vec3 p) { p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
 float sh2(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
 float sn(vec2 p) { vec2 i = floor(p); vec2 f = fract(p); f = f * f * (3.0 - 2.0 * f);
     return mix(mix(sh2(i), sh2(i + vec2(1.0, 0.0)), f.x), mix(sh2(i + vec2(0.0, 1.0)), sh2(i + vec2(1.0, 1.0)), f.x), f.y); }
 float sfbm(vec2 p) { float s = 0.0; float a = 0.5; for (int i = 0; i < 5; i++) { s += a * sn(p); p *= 2.02; a *= 0.5; } return s; }
-void main() {
-    vec3 d = normalize(vDir);
+vec3 gkSkyColor(vec3 d, float sunDisk) {
     float h = d.y;
     vec3 col = h > 0.0 ? mix(uHorizon, uZenith, pow(clamp(h, 0.0, 1.0), 0.5)) : mix(uHorizon, uGround, pow(clamp(-h, 0.0, 1.0), 0.4));
     float sd = max(dot(d, uSunDir), 0.0);
     col += uSunColor * (pow(sd, 8.0) * 0.18 + pow(sd, 90.0) * 0.5) * uSunVisible;
-    col += uSunColor * smoothstep(1.0 - uSunSize, 1.0 - uSunSize * 0.55, sd) * 12.0 * uSunVisible;
+    col += uSunColor * smoothstep(1.0 - uSunSize, 1.0 - uSunSize * 0.55, sd) * 12.0 * uSunVisible * sunDisk;
     if (uStars > 0.01 && h > 0.0) {
         float s = sh(floor(d * 380.0));
         col += step(0.9982, s) * uStars * (0.6 + 0.4 * sin(uTime * 3.0 + s * 90.0)) * smoothstep(0.0, 0.2, h);
@@ -140,10 +140,18 @@ void main() {
         float lit = 0.75 + 0.25 * pow(sd, 3.0);
         col = mix(col, uCloudColor * lit, c * smoothstep(0.01, 0.18, h) * 0.92);
     }
-    gl_FragColor = vec4(col, 1.0);
+    return col;
+}
+`;
+
+    const FRAG = SKY_GLSL + `
+varying vec3 vDir;
+void main() {
+    gl_FragColor = vec4(gkSkyColor(normalize(vDir), 1.0), 1.0);
     #include <tonemapping_fragment>
     #include <encodings_fragment>
 }`;
+    Sky.GLSL = SKY_GLSL;
 
     Sky.createMesh = function () {
         const mat = new THREE.ShaderMaterial({
