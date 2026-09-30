@@ -1,15 +1,6 @@
 GK.module('render/raytracer', function (GK) {
     'use strict';
 
-    // GamerKraft Ray Tracer: real-time hybrid ray tracing for the editor viewport and packaged
-    // games. It shares three.js's WebGL2 context. Every frame it traces primary visibility for
-    // voxels (DDA) and actor meshes (two-level BVH rebuilt from the live scene graph), with
-    // ray-traced sun and point-light shadows, reflections, refraction through glass and water,
-    // ambient occlusion and optional one-bounce global illumination. A temporal pass
-    // (reprojection with neighbourhood clamping) antialiases and denoises. The result is written
-    // with depth, then three.js draws what is not traced (editor helpers, particles, transparent
-    // effects, lines) on top.
-
     const RT = GK.RTScene, A = GK.Actors, U = GK.Util;
 
     const QUALITY = {
@@ -47,7 +38,6 @@ void primaryRay(vec2 px, out vec3 ro, out vec3 rd) {
     rd = normalize(uCamFwd + uCamRight * uv.x * uTanHalfFov * uAspect + uCamUp * uv.y * uTanHalfFov);
 }
 
-// Hemisphere ambient, as the raster renderer's hemisphere light.
 vec3 ambient(Surf s, vec3 n) { return mix(uHemiGround, uHemiSky, n.y * 0.5 + 0.5) * s.albedo * (1.0 - s.metal); }
 
 float occlusion(vec3 p, vec3 n) {
@@ -59,7 +49,6 @@ float occlusion(vec3 p, vec3 n) {
     return uAO > 0 ? 1.0 - 0.85 * occ / float(uAO) : 1.0;
 }
 
-// Sun plus the nearest point lights, each with a shadow ray (jittered when soft shadows are on).
 vec3 directLight(Surf s, vec3 sp, vec3 gn, vec3 wo, bool shadows, int maxLights) {
     vec3 L = vec3(0.0);
     float pdf;
@@ -86,7 +75,6 @@ vec3 directLight(Surf s, vec3 sp, vec3 gn, vec3 wo, bool shadows, int maxLights)
     return L;
 }
 
-// Radiance along a secondary ray (reflection or GI), shaded without further bounces.
 vec3 shadeSecondary(vec3 ro, vec3 rd, bool shadows, float skyScale) {
     Hit h;
     rd = safeDir(rd);
@@ -193,8 +181,6 @@ void main() {
     oPos = pos;
 }`;
 
-    // Temporal accumulation: reproject the previous result through this frame's hit positions,
-    // clamp it to the current neighbourhood and blend with an adaptive weight.
     const RESOLVE = `#version 300 es
 precision highp float;
 uniform sampler2D uCur;
@@ -205,7 +191,6 @@ uniform mat4 uPrevVP;
 uniform vec3 uCamPos;
 uniform float uMaxHistory;
 out vec4 o;
-// 5-tap Catmull-Rom resampling keeps reprojected history sharp (bilinear would blur it).
 vec3 historyAt(vec2 uv, vec2 size) {
     vec2 sp = uv * size, t1 = floor(sp - 0.5) + 0.5, f = sp - t1;
     vec2 w0 = f * (-0.5 + f * (1.0 - 0.5 * f)), w1 = 1.0 + f * f * (-2.5 + 1.5 * f);
@@ -240,7 +225,6 @@ void main() {
     o = vec4(mix(clamp(historyAt(uv, vec2(size)), mn, mx), c, 1.0 / n), n);
 }`;
 
-    // Upscale to the canvas, tone map like three.js (ACES + sRGB) and write depth for the overlay pass.
     const COMPOSITE = `#version 300 es
 precision highp float;
 uniform sampler2D uSrc;
@@ -274,7 +258,6 @@ void main() {
     function halton(i, b) { let f = 1, r = 0; while (i > 0) { f /= b; r += f * (i % b); i = Math.floor(i / b); } return r; }
 
     class RayTracer {
-        // Ray tracing needs WebGL2 with renderable float targets on three.js's context.
         static support(renderer) {
             if (!renderer || !renderer.capabilities || !renderer.capabilities.isWebGL2) return { ok: false, reason: 'ray tracing needs WebGL2' };
             if (!renderer.getContext().getExtension('EXT_color_buffer_float')) return { ok: false, reason: 'this GPU cannot render to floating-point targets' };
@@ -333,8 +316,6 @@ void main() {
             this.options = Object.assign({}, QUALITY[q], { quality: q }, res ? { scale: U.clamp(res, 0.25, 1) } : {});
             this.hasHistory = false;
         }
-
-        // ---- scene sync ---------------------------------------------------------------------
 
         setWorld(world) {
             this._off.forEach(f => f());
@@ -397,7 +378,6 @@ void main() {
             gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
             gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
         }
-        // Float data texture; reallocated only when its size changes.
         _upload2D(key, w, h, data) {
             const gl = this.gl;
             let t = this.tex[key];
@@ -418,8 +398,6 @@ void main() {
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
         }
 
-        // Walks the scene graph: meshes become ray-traced instances (hidden from the raster pass),
-        // everything else is left for three.js to draw on top.
         _gather() {
             const eng = this.engine, wv = eng.worldView;
             const chunkMeshes = new Set();
@@ -445,7 +423,6 @@ void main() {
 
         _buildInstances(foliage, dynamic) {
             const store = this.store;
-            // Foliage never moves between rebuilds, so it is baked into one world-space BLAS.
             const key = foliage.map(m => m.uuid + ':' + m.count).join('|');
             if (key !== this.staticKey || !store.get('static:' + key)) {
                 if (store.triCount > 400000) store.clear();
@@ -500,7 +477,6 @@ void main() {
             this.stats.triangles = tris;
         }
 
-        // The brightest nearby lights: actor lights, game lights and glowing blocks.
         _lights(camPos) {
             const eng = this.engine, w = this.world, out = [];
             const push = (p, L) => {
@@ -566,8 +542,6 @@ void main() {
             return l;
         }
 
-        // Draws a frame for `camera`. Returns false (and leaves the frame to the raster renderer)
-        // while shaders compile or if ray tracing failed.
         render(camera) {
             if (this.error || !this.world) return false;
             const eng = this.engine, gl = this.gl, renderer = this.renderer;
@@ -656,7 +630,6 @@ void main() {
             }
         }
 
-        // three.js draws everything that was not ray traced, depth-tested against the traced frame.
         _overlay(camera, hide) {
             const r = this.renderer, autoClear = r.autoClear, shadows = r.shadowMap.autoUpdate;
             const was = hide.map(o => o.visible);

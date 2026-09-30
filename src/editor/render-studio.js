@@ -1,9 +1,6 @@
 GK.module('editor/render-studio', { runtime: false }, function (GK) {
     'use strict';
 
-    // Editor front end for GK.PathTracer: the Path Traced viewport mode, the Render window
-    // (still images) and animation rendering (turntables and time-lapses to video or PNGs).
-
     const U = GK.Util, UI = GK.UI, h = UI.h, RT = GK.RTScene, RO = GK.RenderOutput;
     const EMISSIVE_PATTERNS = new Set([19, 22, 32]);
 
@@ -17,8 +14,6 @@ GK.module('editor/render-studio', { runtime: false }, function (GK) {
     const emissiveBlock = id => { const b = GK.Blocks.byId[id]; return !!b && EMISSIVE_PATTERNS.has(b.side[1]); };
     const nextTick = fn => (document.hidden ? setTimeout(fn, 16) : requestAnimationFrame(fn));
 
-    // Keeps a PathTracer's scene in step with the editor world. Live links follow edits
-    // incrementally; snapshot links capture the world once.
     class SceneLink {
         constructor(ed, pt, live) {
             this.ed = ed; this.pt = pt;
@@ -63,7 +58,6 @@ GK.module('editor/render-studio', { runtime: false }, function (GK) {
         if (GK.editor) GK.editor.log('Path tracer unavailable: ' + reason, 'error', 'LogRender');
     }
 
-    // Focus distance and orbit pivot: whatever sits under the centre of the viewport.
     Studio.centerHit = function (ed) {
         const r = ed.engine.renderer.domElement.getBoundingClientRect();
         const hit = r.width ? ed.pick(r.left + r.width / 2, r.top + r.height / 2) : null;
@@ -77,8 +71,6 @@ GK.module('editor/render-studio', { runtime: false }, function (GK) {
         ed.log('Focus distance set to ' + d + ' m', 'info', 'LogRender');
         return d;
     };
-
-    // ---- Path Traced viewport ------------------------------------------------------------
 
     Studio.enableViewport = function (ed) {
         if (Studio.viewport) return true;
@@ -106,8 +98,6 @@ GK.module('editor/render-studio', { runtime: false }, function (GK) {
         v.badge.remove();
     };
 
-    // Called by the editor every frame after the engine update. Returns true when the raster
-    // viewport does not need drawing (path traced view active, or the Render window covers it).
     Studio.drawViewport = function (ed, cam) {
         if (Studio.win) return true;
         const v = Studio.viewport;
@@ -121,7 +111,6 @@ GK.module('editor/render-studio', { runtime: false }, function (GK) {
             v.movedAt = now;
             pt.setCamera(GK.PathTracer.cameraFrom(cam, { aperture: r.aperture, focusDistance: r.focusDistance }));
         }
-        // Half resolution while the camera moves keeps navigation responsive; full once it rests.
         const scale = U.clamp(r.viewportScale, 0.25, 1) * (now - v.movedAt < 200 ? 0.5 : 1);
         pt.resize(Math.max(1, Math.round(ed.vp.clientWidth * scale)), Math.max(1, Math.round(ed.vp.clientHeight * scale)));
         v.link.sync(now);
@@ -143,9 +132,6 @@ GK.module('editor/render-studio', { runtime: false }, function (GK) {
         return true;
     };
 
-    // ---- Render jobs -----------------------------------------------------------------------
-
-    // Renders a list of frames (camera + optional time of day) to `samples` each, reporting progress.
     class RenderJob {
         constructor(ed, pt, plan) {
             this.ed = ed; this.pt = pt; this.plan = plan;
@@ -214,7 +200,6 @@ GK.module('editor/render-studio', { runtime: false }, function (GK) {
         return { r, width: w, height: hgt, camera };
     }
 
-    // Scriptable still render: resolves with a PNG blob. Used by the console and tests.
     Studio.renderImage = async function (ed, opts) {
         const sup = GK.PathTracer.support();
         if (!sup.ok) throw new Error(sup.reason);
@@ -228,8 +213,6 @@ GK.module('editor/render-studio', { runtime: false }, function (GK) {
         } finally { pt.dispose(); }
     };
 
-    // Offline encode with exact frame timestamps (WebCodecs), muxed into WebM. Returns null when
-    // the browser has no suitable encoder.
     async function encodeWebCodecs(blobs, fps, width, height, onProgress) {
         if (!window.VideoEncoder || !window.VideoFrame) return null;
         const w = width - (width % 2), hgt = height - (height % 2), px = w * hgt;
@@ -270,7 +253,6 @@ GK.module('editor/render-studio', { runtime: false }, function (GK) {
         return (await encodeWebCodecs(blobs, fps, width, height, onProgress)) || encodeRecorded(blobs, fps, width, height, onProgress);
     }
 
-    // Fallback: replay the frames in real time into a MediaRecorder.
     async function encodeRecorded(blobs, fps, width, height, onProgress) {
         const types = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm', 'video/mp4;codecs=avc1', 'video/mp4'];
         const type = window.MediaRecorder && types.find(t => MediaRecorder.isTypeSupported(t));
@@ -295,8 +277,6 @@ GK.module('editor/render-studio', { runtime: false }, function (GK) {
             if (track.requestFrame) track.requestFrame(); else if (stream.requestFrame) stream.requestFrame();
             if (onProgress) onProgress(i + 1, blobs.length);
         }
-        // A recorder only emits a frame once the next one arrives, so close the clip with a
-        // repeat of the last frame at its end time.
         const tail = t0 + blobs.length * dt - performance.now();
         if (tail > 0) await sleep(tail);
         if (track.requestFrame) track.requestFrame(); else if (stream.requestFrame) stream.requestFrame();
@@ -311,8 +291,6 @@ GK.module('editor/render-studio', { runtime: false }, function (GK) {
         for (let i = 0; i < blobs.length; i++) entries.push({ name: RO.frameName(prefix, i, ext), data: new Uint8Array(await blobs[i].arrayBuffer()) });
         return new Blob([RO.zip(entries)], { type: 'application/zip' });
     }
-
-    // ---- Render window ---------------------------------------------------------------------
 
     Studio.open = function (ed, tab) {
         ed = ed || GK.editor;
