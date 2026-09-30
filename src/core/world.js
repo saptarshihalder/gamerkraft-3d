@@ -77,6 +77,7 @@ GK.module('core/world', function (GK) {
             fog: true,
             viewportScale: 0.75,
             viewportSamples: 1024,
+            rt: { quality: 'high', resolution: 'auto', game: false },
             anim: { type: 'orbit', frames: 120, fps: 30, degrees: 360, samples: 64, startTime: 6, endTime: 20, output: 'video' }
         }
     };

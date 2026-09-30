@@ -1,23 +1,17 @@
-GK.module('render/rt-scene', { runtime: false }, function (GK) {
+GK.module('render/rt-scene', function (GK) {
     'use strict';
-
-    // Packs a World (voxels, actor meshes, lights) into flat typed arrays for the path tracer.
-    // DOM-free so it can be unit tested; the GPU side lives in render/pathtracer.
 
     const B = GK.Blocks, A = GK.Actors, U = GK.Util, World = GK.World;
     const TEX_W = 2048;
     const BRICK = 4;
     const KIND = { OPAQUE: 0, CUTOUT: 1, DIELECTRIC: 2 };
-    // [index of refraction, absorption per block, in-scattering strength]
     const DIELECTRIC = { glass: [1.5, 0.08, 0], water: [1.33, 0.22, 1.2], slime: [1.4, 0.9, 0.6] };
-    const MAT_TEXELS = 3, TRI_TEXELS = 3, NODE_TEXELS = 2, LIGHT_TEXELS = 2;
+    const MAT_TEXELS = 3, TRI_TEXELS = 3, NODE_TEXELS = 2, LIGHT_TEXELS = 2, INST_TEXELS = 4;
     const FLAG_SHADOW = 1, FLAG_UNLIT = 2;
     const MAX_LEAF = 16;
 
-    const RT = GK.RTScene = { TEX_W, BRICK, MAX_LEAF, KIND, MAT_TEXELS, TRI_TEXELS, NODE_TEXELS, LIGHT_TEXELS, FLAG_SHADOW, FLAG_UNLIT };
+    const RT = GK.RTScene = { TEX_W, BRICK, MAX_LEAF, KIND, MAT_TEXELS, TRI_TEXELS, NODE_TEXELS, LIGHT_TEXELS, INST_TEXELS, FLAG_SHADOW, FLAG_UNLIT };
 
-    // 256 x 5 RGBA rows: top, side, bottom (linear rgb + pattern), [kind, ior, absorption, lowered liquid top],
-    // [in-scattering, 0, 0, 0].
     RT.BLOCK_ROWS = 5;
     RT.blockTable = function () {
         const out = new Float32Array(256 * RT.BLOCK_ROWS * 4);
@@ -37,7 +31,6 @@ GK.module('render/rt-scene', { runtime: false }, function (GK) {
         return true;
     }
 
-    // Chunk-aligned bounds of every non-empty chunk, in world voxel coordinates.
     RT.voxelBounds = function (world) {
         const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
         for (const [k, c] of world.chunks) {
@@ -49,7 +42,6 @@ GK.module('render/rt-scene', { runtime: false }, function (GK) {
         return { min: lo.map(v => v * 16), size: [0, 1, 2].map(i => (hi[i] - lo[i] + 1) * 16), empty: false };
     };
 
-    // Texel (x, y, z) lives at x + y*X + z*X*Y, matching a WebGL 3D texture of width X, height Y, depth Z.
     RT.packVoxels = function (world, maxDim) {
         const b = RT.voxelBounds(world);
         const cap = maxDim || 2048;
@@ -86,8 +78,6 @@ GK.module('render/rt-scene', { runtime: false }, function (GK) {
         }
     };
 
-    // Re-copies one chunk after an edit. Returns the texture regions to upload, or null when the
-    // chunk lies outside the packed bounds (the caller must repack everything).
     RT.updateChunk = function (vox, world, key) {
         const p = World.ckeyParts(key);
         const c = world.chunks.get(key);
@@ -103,9 +93,7 @@ GK.module('render/rt-scene', { runtime: false }, function (GK) {
         return { offset: o, data, brickOffset: bo, brickSize: n, bricks };
     };
 
-    // ---- actor meshes -> triangles ----------------------------------------------------------
-
-    function materialRecord(m, tint, cast) {
+    const materialRecord = RT.materialRecord = function (m, tint, cast) {
         const col = m.color ? [m.color.r, m.color.g, m.color.b] : [1, 1, 1];
         if (tint) { col[0] *= tint.r; col[1] *= tint.g; col[2] *= tint.b; }
         const unlit = !!m.isMeshBasicMaterial;
@@ -119,10 +107,8 @@ GK.module('render/rt-scene', { runtime: false }, function (GK) {
             metalness: m.metalness != null ? m.metalness : 0,
             flags: (cast ? FLAG_SHADOW : 0) | (unlit ? FLAG_UNLIT : 0)
         };
-    }
+    };
 
-    // Collects renderable actor geometry the way a packaged game would show it: editor-only actors,
-    // editor-only parts, hidden actors, lines and helpers are left out.
     RT.collectMeshes = function (worldView) {
         const out = [];
         const world = worldView.world;
@@ -195,21 +181,24 @@ GK.module('render/rt-scene', { runtime: false }, function (GK) {
         return { count: mat.length, pos: new Float32Array(pos), nor: new Float32Array(nor), mat: new Int32Array(mat), materials };
     };
 
-    // ---- BVH (binned SAH, children stored as pairs: left, left + 1) --------------------------
-
     RT.buildBVH = function (tris, opts) {
         const n = tris.count, P = tris.pos;
-        const maxLeaf = (opts && opts.maxLeaf) || 4, BINS = 12;
-        const order = new Uint32Array(n);
-        const cen = new Float32Array(n * 3), bmin = new Float32Array(n * 3), bmax = new Float32Array(n * 3);
+        const bmin = new Float32Array(n * 3), bmax = new Float32Array(n * 3);
         for (let i = 0; i < n; i++) {
-            order[i] = i;
             for (let k = 0; k < 3; k++) {
                 const a = P[i * 9 + k], b = P[i * 9 + 3 + k], c = P[i * 9 + 6 + k];
                 bmin[i * 3 + k] = Math.min(a, b, c); bmax[i * 3 + k] = Math.max(a, b, c);
-                cen[i * 3 + k] = (bmin[i * 3 + k] + bmax[i * 3 + k]) * 0.5;
             }
         }
+        return RT.buildBVHBounds(n, bmin, bmax, opts);
+    };
+
+    RT.buildBVHBounds = function (n, bmin, bmax, opts) {
+        const maxLeaf = (opts && opts.maxLeaf) || 4, BINS = 12;
+        const order = new Uint32Array(n);
+        const cen = new Float32Array(n * 3);
+        for (let i = 0; i < n * 3; i++) cen[i] = (bmin[i] + bmax[i]) * 0.5;
+        for (let i = 0; i < n; i++) order[i] = i;
         const cap = Math.max(1, 2 * n);
         const nmin = new Float32Array(cap * 3), nmax = new Float32Array(cap * 3);
         const first = new Uint32Array(cap), count = new Uint32Array(cap), left = new Uint32Array(cap);
@@ -300,7 +289,6 @@ GK.module('render/rt-scene', { runtime: false }, function (GK) {
 
     const rows = texels => Math.max(1, Math.ceil(texels / TEX_W));
 
-    // Triangles in BVH order: [v0, matIndex] [v1 - v0] [v2 - v0]; normals: [n0] [n1] [n2].
     RT.packTriangles = function (tris, bvh) {
         const n = tris.count, h = rows(n * TRI_TEXELS);
         const tri = new Float32Array(TEX_W * h * 4), nor = new Float32Array(TEX_W * h * 4);
@@ -323,7 +311,6 @@ GK.module('render/rt-scene', { runtime: false }, function (GK) {
         return { data: out, width: TEX_W, height: h };
     };
 
-    // Materials: [rgb, opacity] [emissive rgb, roughness] [metalness, flags, 0, 0].
     RT.packMaterials = function (materials) {
         const h = rows(Math.max(1, materials.length) * MAT_TEXELS);
         const out = new Float32Array(TEX_W * h * 4);
@@ -334,12 +321,9 @@ GK.module('render/rt-scene', { runtime: false }, function (GK) {
         return { data: out, width: TEX_W, height: h };
     };
 
-    // Average emitted radiance of each self-lit block pattern (mirrors gkSurface in voxel-material).
     const EMISSIVE = { 19: c => [0.95, 0.4, 0.06], 22: c => [c.r * 0.97, c.g * 0.97, c.b * 0.97], 32: c => [c.r * 1.28, c.g * 1.28, c.b * 1.28] };
     RT.MAX_BLOCK_LIGHTS = 64;
 
-    // Exposed emissive voxels become cube area lights when there are few enough to sample directly;
-    // larger emitters (lava lakes) are found reliably by ordinary path sampling instead.
     RT.collectBlockLights = function (world) {
         const out = [];
         const emits = new Array(256).fill(null);
@@ -359,8 +343,6 @@ GK.module('render/rt-scene', { runtime: false }, function (GK) {
         return out;
     };
 
-    // Lights: [position, range] [color * intensity, radius]. Block lights store their min corner and
-    // radius -1; they are only listed when every exposed emissive voxel fits (blockLights = true).
     RT.collectLights = function (world) {
         const list = [];
         for (const a of world.actors) {
@@ -379,68 +361,191 @@ GK.module('render/rt-scene', { runtime: false }, function (GK) {
         return { data, width: TEX_W, height: h, count: list.length, blockLights: !!blocks };
     };
 
-    RT.buildGeometry = function (worldView) {
-        const tris = RT.triangulate(RT.collectMeshes(worldView));
-        const bvh = RT.buildBVH(tris);
-        return { tris: RT.packTriangles(tris, bvh), nodes: RT.packNodes(bvh), nodeCount: bvh.nodeCount, triCount: tris.count, materials: RT.packMaterials(tris.materials), materialCount: tris.materials.length };
+    class GeometryStore {
+        constructor() { this.entries = new Map(); this.clear(); }
+        clear() {
+            this.nodes = new Float32Array(8 * 64); this.tri = new Float32Array(12 * 64); this.nor = new Float32Array(12 * 64);
+            this.nodeCount = 0; this.triCount = 0; this.entries.clear(); this.version = (this.version || 0) + 1;
+        }
+        get(key) { return this.entries.get(key); }
+        _grow(name, need) {
+            if (this[name].length >= need) return;
+            let len = this[name].length;
+            while (len < need) len *= 2;
+            const next = new Float32Array(len);
+            next.set(this[name]);
+            this[name] = next;
+        }
+        add(key, tris) {
+            if (!tris.count) { this.entries.set(key, null); return null; }
+            const bvh = RT.buildBVH(tris);
+            const e = { key, nodeBase: this.nodeCount, triBase: this.triCount, nodeCount: bvh.nodeCount, triCount: tris.count,
+                bounds: [bvh.nodes[0], bvh.nodes[1], bvh.nodes[2], bvh.nodes[4], bvh.nodes[5], bvh.nodes[6]] };
+            this._grow('nodes', (this.nodeCount + bvh.nodeCount) * 8);
+            this.nodes.set(bvh.nodes.subarray(0, bvh.nodeCount * 8), this.nodeCount * 8);
+            this._grow('tri', (this.triCount + tris.count) * 12);
+            this._grow('nor', (this.triCount + tris.count) * 12);
+            const packed = RT.packTriangles(tris, bvh);
+            this.tri.set(packed.tri.subarray(0, tris.count * 12), this.triCount * 12);
+            this.nor.set(packed.nor.subarray(0, tris.count * 12), this.triCount * 12);
+            this.nodeCount += bvh.nodeCount;
+            this.triCount += tris.count;
+            this.version++;
+            this.entries.set(key, e);
+            return e;
+        }
+        pack() {
+            const nh = rows(Math.max(1, this.nodeCount) * NODE_TEXELS), th = rows(Math.max(1, this.triCount) * TRI_TEXELS);
+            const nodes = new Float32Array(TEX_W * nh * 4), tri = new Float32Array(TEX_W * th * 4), nor = new Float32Array(TEX_W * th * 4);
+            nodes.set(this.nodes.subarray(0, this.nodeCount * 8));
+            tri.set(this.tri.subarray(0, this.triCount * 12));
+            nor.set(this.nor.subarray(0, this.triCount * 12));
+            return { nodes: { data: nodes, width: TEX_W, height: nh }, tris: { tri, nor, width: TEX_W, height: th } };
+        }
+    }
+    RT.GeometryStore = GeometryStore;
+
+    RT.geometryTriangles = function (g, flat) {
+        const P = g.attributes.position, Nrm = g.attributes.normal, idx = g.index;
+        if (!P) return { count: 0, pos: new Float32Array(0), nor: new Float32Array(0), mat: new Int32Array(0) };
+        const n = idx ? idx.count : P.count, pos = [], nor = [];
+        const va = new THREE.Vector3(), vb = new THREE.Vector3(), vc = new THREE.Vector3(), fn = new THREE.Vector3(), e1 = new THREE.Vector3(), e2 = new THREE.Vector3();
+        for (let i = 0; i + 2 < n; i += 3) {
+            const a = idx ? idx.getX(i) : i, b = idx ? idx.getX(i + 1) : i + 1, c = idx ? idx.getX(i + 2) : i + 2;
+            va.fromBufferAttribute(P, a); vb.fromBufferAttribute(P, b); vc.fromBufferAttribute(P, c);
+            fn.crossVectors(e1.subVectors(vb, va), e2.subVectors(vc, va));
+            if (fn.lengthSq() < 1e-14) continue;
+            fn.normalize();
+            pos.push(va.x, va.y, va.z, vb.x, vb.y, vb.z, vc.x, vc.y, vc.z);
+            if (flat || !Nrm) nor.push(fn.x, fn.y, fn.z, fn.x, fn.y, fn.z, fn.x, fn.y, fn.z);
+            else for (const v of [a, b, c]) nor.push(Nrm.getX(v), Nrm.getY(v), Nrm.getZ(v));
+        }
+        const count = pos.length / 9;
+        return { count, pos: new Float32Array(pos), nor: new Float32Array(nor), mat: new Int32Array(count).fill(-1) };
     };
 
-    // Closest-hit reference traversal over the packed arrays; mirrors the GLSL and backs autofocus.
+    const _inv = new THREE.Matrix4(), _corner = new THREE.Vector3();
+    RT.instance = function (entry, matrix, material, flags) {
+        if (!entry || !(Math.abs(matrix.determinant()) > 1e-12)) return null;
+        const m = _inv.copy(matrix).invert().elements;
+        const inst = { entry, material, flags, inv: new Float32Array([m[0], m[4], m[8], m[12], m[1], m[5], m[9], m[13], m[2], m[6], m[10], m[14]]),
+            bounds: [Infinity, Infinity, Infinity, -Infinity, -Infinity, -Infinity] };
+        const b = entry.bounds, w = inst.bounds;
+        for (let k = 0; k < 8; k++) {
+            _corner.set(b[k & 1 ? 3 : 0], b[k & 2 ? 4 : 1], b[k & 4 ? 5 : 2]).applyMatrix4(matrix);
+            if (_corner.x < w[0]) w[0] = _corner.x; if (_corner.y < w[1]) w[1] = _corner.y; if (_corner.z < w[2]) w[2] = _corner.z;
+            if (_corner.x > w[3]) w[3] = _corner.x; if (_corner.y > w[4]) w[4] = _corner.y; if (_corner.z > w[5]) w[5] = _corner.z;
+        }
+        return inst;
+    };
+    RT.IDENTITY = new THREE.Matrix4();
+
+    RT.packInstances = function (instances) {
+        const n = instances.length;
+        const bmin = new Float32Array(n * 3), bmax = new Float32Array(n * 3);
+        instances.forEach((it, i) => { for (let k = 0; k < 3; k++) { bmin[i * 3 + k] = it.bounds[k]; bmax[i * 3 + k] = it.bounds[3 + k]; } });
+        const bvh = RT.buildBVHBounds(n, bmin, bmax, { maxLeaf: 2 });
+        const ih = rows(Math.max(1, n) * INST_TEXELS), data = new Float32Array(TEX_W * ih * 4);
+        for (let i = 0; i < n; i++) {
+            const it = instances[bvh.order[i]], o = i * 16;
+            data.set(it.inv, o);
+            data[o + 12] = it.entry.nodeBase; data[o + 13] = it.entry.triBase; data[o + 14] = it.material; data[o + 15] = it.flags;
+        }
+        const th = rows(Math.max(1, bvh.nodeCount) * NODE_TEXELS), tlas = new Float32Array(TEX_W * th * 4);
+        tlas.set(bvh.nodes.subarray(0, Math.max(1, bvh.nodeCount) * 8));
+        return { instances: { data, width: TEX_W, height: ih }, tlas: { data: tlas, width: TEX_W, height: th }, count: n };
+    };
+
+    RT.buildGeometry = function (worldView) {
+        const tris = RT.triangulate(RT.collectMeshes(worldView));
+        const store = new GeometryStore();
+        const e = store.add('static', tris);
+        const inst = e ? RT.packInstances([RT.instance(e, RT.IDENTITY, -1, FLAG_SHADOW)]) : RT.packInstances([]);
+        const packed = store.pack();
+        return { tris: packed.tris, nodes: packed.nodes, instances: inst.instances, tlas: inst.tlas, instCount: inst.count,
+            triCount: tris.count, materials: RT.packMaterials(tris.materials), materialCount: tris.materials.length };
+    };
+
     RT.raycastGeometry = function (geo, ro, rd, tMax) {
-        if (!geo.nodeCount) return null;
-        const N = geo.nodes.data, T = geo.tris.tri;
-        const inv = [1 / rd[0], 1 / rd[1], 1 / rd[2]];
-        const box = o => {
+        if (!geo.instCount) return null;
+        const N = geo.nodes.data, T = geo.tris.tri, TL = geo.tlas.data, I = geo.instances.data;
+        const boxT = (A, o, org, inv, best) => {
             let t0 = 0, t1 = best;
             for (let k = 0; k < 3; k++) {
-                let a = (N[o + k] - ro[k]) * inv[k], b = (N[o + 4 + k] - ro[k]) * inv[k];
+                let a = (A[o + k] - org[k]) * inv[k], b = (A[o + 4 + k] - org[k]) * inv[k];
                 if (a > b) { const t = a; a = b; b = t; }
                 if (a > t0) t0 = a;
                 if (b < t1) t1 = b;
             }
-            return t0 <= t1 ? t0 : Infinity;
+            return t0 <= t1;
         };
         let best = tMax != null ? tMax : Infinity, hit = null;
-        const stack = [0];
-        while (stack.length) {
-            const o = stack.pop() * 8;
-            if (box(o) === Infinity) continue;
-            const cnt = N[o + 7];
-            if (cnt > 0) {
-                for (let i = N[o + 3], e = i + cnt; i < e; i++) {
-                    const b = i * TRI_TEXELS * 4;
-                    const e1 = [T[b + 4], T[b + 5], T[b + 6]], e2 = [T[b + 8], T[b + 9], T[b + 10]];
-                    const p = [rd[1] * e2[2] - rd[2] * e2[1], rd[2] * e2[0] - rd[0] * e2[2], rd[0] * e2[1] - rd[1] * e2[0]];
-                    const det = e1[0] * p[0] + e1[1] * p[1] + e1[2] * p[2];
-                    if (Math.abs(det) < 1e-12) continue;
-                    const id = 1 / det, s = [ro[0] - T[b], ro[1] - T[b + 1], ro[2] - T[b + 2]];
-                    const u = (s[0] * p[0] + s[1] * p[1] + s[2] * p[2]) * id;
-                    if (u < 0 || u > 1) continue;
-                    const q = [s[1] * e1[2] - s[2] * e1[1], s[2] * e1[0] - s[0] * e1[2], s[0] * e1[1] - s[1] * e1[0]];
-                    const v = (rd[0] * q[0] + rd[1] * q[1] + rd[2] * q[2]) * id;
-                    if (v < 0 || u + v > 1) continue;
-                    const t = (e2[0] * q[0] + e2[1] * q[1] + e2[2] * q[2]) * id;
-                    if (t > 1e-4 && t < best) { best = t; hit = { t, tri: i, material: T[b + 3] }; }
+        const invW = rd.map(v => 1 / v);
+        const top = [0];
+        while (top.length) {
+            const o = top.pop() * 8;
+            if (!boxT(TL, o, ro, invW, best)) continue;
+            if (TL[o + 7] > 0) {
+                for (let j = TL[o + 3], je = j + TL[o + 7]; j < je; j++) {
+                    const r = I.subarray(j * 16, j * 16 + 16);
+                    const lo = [0, 1, 2].map(k => r[k * 4] * ro[0] + r[k * 4 + 1] * ro[1] + r[k * 4 + 2] * ro[2] + r[k * 4 + 3]);
+                    const ld = [0, 1, 2].map(k => r[k * 4] * rd[0] + r[k * 4 + 1] * rd[1] + r[k * 4 + 2] * rd[2]);
+                    const inv = ld.map(v => 1 / v), nodeBase = r[12], triBase = r[13];
+                    const stack = [0];
+                    while (stack.length) {
+                        const no = (nodeBase + stack.pop()) * 8;
+                        if (!boxT(N, no, lo, inv, best)) continue;
+                        const cnt = N[no + 7];
+                        if (!cnt) { stack.push(N[no + 3], N[no + 3] + 1); continue; }
+                        for (let i = triBase + N[no + 3], e = i + cnt; i < e; i++) {
+                            const b = i * TRI_TEXELS * 4;
+                            const e1 = [T[b + 4], T[b + 5], T[b + 6]], e2 = [T[b + 8], T[b + 9], T[b + 10]];
+                            const p = [ld[1] * e2[2] - ld[2] * e2[1], ld[2] * e2[0] - ld[0] * e2[2], ld[0] * e2[1] - ld[1] * e2[0]];
+                            const det = e1[0] * p[0] + e1[1] * p[1] + e1[2] * p[2];
+                            if (Math.abs(det) < 1e-12) continue;
+                            const id = 1 / det, s = [lo[0] - T[b], lo[1] - T[b + 1], lo[2] - T[b + 2]];
+                            const u = (s[0] * p[0] + s[1] * p[1] + s[2] * p[2]) * id;
+                            if (u < 0 || u > 1) continue;
+                            const q = [s[1] * e1[2] - s[2] * e1[1], s[2] * e1[0] - s[0] * e1[2], s[0] * e1[1] - s[1] * e1[0]];
+                            const v = (ld[0] * q[0] + ld[1] * q[1] + ld[2] * q[2]) * id;
+                            if (v < 0 || u + v > 1) continue;
+                            const t = (e2[0] * q[0] + e2[1] * q[1] + e2[2] * q[2]) * id;
+                            if (t > 1e-4 && t < best) { best = t; hit = { t, tri: i, instance: j, material: r[14] >= 0 ? r[14] : T[b + 3] }; }
+                        }
+                    }
                 }
-            } else {
-                const l = N[o + 3];
-                stack.push(l, l + 1);
-            }
+            } else top.push(TL[o + 3], TL[o + 3] + 1);
         }
         return hit;
     };
 
-    // Plain environment description (linear colors) derived from the level's sky settings.
+    RT.cameraFrom = function (cam, extra) {
+        cam.updateMatrixWorld();
+        const e = cam.matrixWorld.elements;
+        const out = {
+            pos: [e[12], e[13], e[14]],
+            right: new THREE.Vector3(e[0], e[1], e[2]).normalize().toArray(),
+            up: new THREE.Vector3(e[4], e[5], e[6]).normalize().toArray(),
+            fwd: new THREE.Vector3(-e[8], -e[9], -e[10]).normalize().toArray(),
+            fov: cam.isPerspectiveCamera ? cam.fov : 70,
+            ortho: !!cam.isOrthographicCamera,
+            orthoWidth: cam.isOrthographicCamera ? (cam.right - cam.left) / cam.zoom : 0
+        };
+        return Object.assign(out, extra || {});
+    };
+
     RT.environment = function (settingsEnv, overrides) {
         const env = Object.assign({}, settingsEnv, overrides || {});
-        const e = GK.Sky.compute(env);
+        return RT.environmentFrom(GK.Sky.compute(env), env.ambient);
+    };
+    RT.environmentFrom = function (e, ambient) {
         const c = v => [v.r, v.g, v.b];
         return {
             zenith: c(e.zenith), horizon: c(e.horizon), ground: c(e.ground), cloudColor: c(e.cloudColor), fogColor: c(e.fogColor),
             lightColor: c(e.lightColor), lightIntensity: e.lightIntensity, sunDir: [e.sunDir.x, e.sunDir.y, e.sunDir.z],
             lightDir: [e.lightDir.x, e.lightDir.y, e.lightDir.z], sunVisible: e.sunVisible, sunSize: e.sunSize,
             stars: e.stars, clouds: e.clouds, fogNear: e.fogNear, fogFar: e.fogFar, exposure: e.exposure,
-            skyLight: env.ambient != null ? env.ambient : 1
+            skyLight: ambient != null ? ambient : 1
         };
     };
 });

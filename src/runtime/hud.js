@@ -36,6 +36,7 @@ GK.module('runtime/hud', function (GK) {
 .gk-help{margin-top:22px;font-size:12px;opacity:.6;line-height:1.7}
 .gk-set{display:grid;grid-template-columns:auto 180px;gap:10px 18px;align-items:center;margin-bottom:22px;text-align:left;font-size:13px}
 .gk-set input[type=range]{width:100%}
+.gk-set select{width:100%;background:rgba(10,12,16,.8);color:#fff;border:1px solid rgba(255,255,255,.25);border-radius:6px;padding:4px 6px;font:inherit}
 .gk-prompt{position:absolute;left:50%;bottom:22%;transform:translateX(-50%);background:rgba(0,0,0,.6);padding:8px 16px;border-radius:20px;font-size:13px;display:none}
 .gk-touch{position:absolute;inset:0;pointer-events:auto;touch-action:none}
 .gk-stick{position:absolute;left:28px;bottom:28px;width:120px;height:120px;border-radius:50%;background:rgba(255,255,255,.1);border:2px solid rgba(255,255,255,.25)}
