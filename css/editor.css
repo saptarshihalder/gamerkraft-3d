@@ -250,8 +250,9 @@ kbd { background: var(--bg4); border: 1px solid #444; border-bottom-width: 2px; 
 #tour-card .row { display: flex; justify-content: space-between; align-items: center; }
 
 /* Path tracer: viewport overlay and Render window */
+#rt-badge.hidden { display: none; }
 #viewport canvas.pt-canvas { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 1; pointer-events: none; }
-#pt-badge { position: absolute; left: 50%; top: 42px; transform: translateX(-50%); z-index: 6; background: rgba(0,0,0,.6); color: #e9d8a6; border: 1px solid rgba(233,216,166,.25); padding: 3px 12px; border-radius: 12px; font: 11px/1.5 ui-monospace, Consolas, monospace; pointer-events: none; white-space: nowrap; }
+#pt-badge, #rt-badge { position: absolute; left: 50%; top: 42px; transform: translateX(-50%); z-index: 6; background: rgba(0,0,0,.6); color: #e9d8a6; border: 1px solid rgba(233,216,166,.25); padding: 3px 12px; border-radius: 12px; font: 11px/1.5 ui-monospace, Consolas, monospace; pointer-events: none; white-space: nowrap; }
 .rs-win { display: flex; flex-direction: column; width: min(1440px, 96vw); height: min(920px, 92vh); background: var(--bg2); border: 1px solid #3a3a3a; border-radius: 6px; box-shadow: 0 20px 60px rgba(0,0,0,.7); overflow: hidden; }
 .rs-tabs { display: flex; gap: 2px; margin-left: 14px; }
 .rs-tab { display: flex; align-items: center; gap: 6px; height: 26px; padding: 0 12px; background: transparent; border: 1px solid transparent; border-radius: var(--r); color: var(--dim); cursor: pointer; }

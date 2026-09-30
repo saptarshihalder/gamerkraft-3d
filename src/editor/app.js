@@ -31,7 +31,7 @@ GK.module('editor/app', { runtime: false }, function (GK) {
             const esc = s => s.replace(/<\/(script)/gi, '<\\/$1').replace(/<!--/g, '<\\!--');
             const json = JSON.stringify(project).replace(/</g, '\\u003c').replace(/[\u2028\u2029]/g, c => '\\u' + c.charCodeAt(0).toString(16));
             const title = U.escapeHTML(project.meta.name || 'GamerKraft Game');
-            return '<!DOCTYPE html>\n<html lang="en"><head><meta charset="utf-8">' +
+            return '<!DOCTYPE html>\n<!-- Made with GamerKraft Engine ' + GK.version + ' - free and open source under the MIT License. Includes three.js (MIT). -->\n<html lang="en"><head><meta charset="utf-8">' +
                 '<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">' +
                 `<title>${title}</title><meta name="generator" content="GamerKraft Engine ${GK.version}">` +
                 (project.meta.description ? `<meta name="description" content="${U.escapeHTML(project.meta.description)}">` : '') +
@@ -174,6 +174,11 @@ GK.module('editor/app', { runtime: false }, function (GK) {
                 h('div.form-row', h('label', 'Author'), (() => { const i = h('input.inp', { value: w.meta.author || '' }); i.addEventListener('change', () => ed.history.meta('author', i.value)); return i; })()),
                 h('div.form-row', h('label', 'Default Quality'), (() => { const s = h('select.inp', ['low', 'medium', 'high'].map(q => h('option', { value: q, selected: q === o.quality }, q[0].toUpperCase() + q.slice(1)))); s.addEventListener('change', () => { o.quality = s.value; }); return s; })()),
                 h('div.form-row', h('label', 'Show FPS Counter'), (() => { const c = h('input', { type: 'checkbox' }); c.addEventListener('change', () => { o.showFps = c.checked; }); return c; })()),
+                h('div.form-row', h('label', 'Ray Tracing'), (() => {
+                    const s = h('select.inp', [['off', 'Off by default (players can turn it on)'], ['on', 'On by default (players can turn it off)']].map(([v, l]) => h('option', { value: v, selected: (v === 'on') === !!w.settings.render.rt.game }, l)));
+                    s.addEventListener('change', () => ed.history.setting('render.rt.game', s.value === 'on'));
+                    return s;
+                })()),
                 h('div.help-text', { style: { padding: '4px 0 0' } }, 'The packaged game is a single HTML file containing the engine runtime, three.js and your level. It runs offline in any modern browser, on desktop (mouse/keyboard/gamepad) and mobile (touch controls).'),
                 problems.length ? h('div', { style: { marginTop: '10px', color: '#e8c35b' } }, UI.icon('triangle-alert', 13), ' Map Check found ' + problems.length + ' issue(s): ' + problems.map(p => p.msg).join('; ')) : null);
             UI.modal('Package Project', body, [
@@ -323,6 +328,10 @@ GK.module('editor/app', { runtime: false }, function (GK) {
                 });
             });
         },
+        _rtQualityItems() {
+            const ed = this.ed, Q = GK.RayTracer.QUALITY;
+            return Object.keys(Q).map(k => ({ label: Q[k].label, checked: ed.world.settings.render.rt.quality === k, action: () => { ed.history.setting('render.rt.quality', k); if (ed.viewMode !== 'raytraced') ed.setViewMode('raytraced'); } }));
+        },
         togglePanel(which) {
             const ws = document.getElementById('workspace'), app = document.getElementById('app');
             const hidden = this._hidden || (this._hidden = {});
@@ -401,15 +410,16 @@ GK.module('editor/app', { runtime: false }, function (GK) {
                     { label: 'Render Image…', icon: 'aperture', kb: 'Alt+R', action: () => GK.RenderStudio.open(ed, 'image') },
                     { label: 'Render Animation…', icon: 'clapperboard', action: () => GK.RenderStudio.open(ed, 'anim') },
                     '-',
+                    { label: 'Ray Traced Viewport (real-time)', checked: ed.viewMode === 'raytraced', action: () => ed.setViewMode(ed.viewMode === 'raytraced' ? 'lit' : 'raytraced') },
                     { label: 'Path Traced Viewport', checked: ed.viewMode === 'pathtraced', action: () => ed.setViewMode(ed.viewMode === 'pathtraced' ? 'lit' : 'pathtraced') },
-                    { label: 'Autofocus on Viewport Centre', icon: 'focus', action: () => GK.RenderStudio.autofocus(ed) }
-                ],
+                    { head: 'Ray Tracing Quality' }
+                ].concat(this._rtQualityItems(), ['-', { label: 'Autofocus on Viewport Centre', icon: 'focus', action: () => GK.RenderStudio.autofocus(ed) }]),
                 Help: () => [
                     { label: 'Quick Start Tour', icon: 'graduation-cap', action: () => this.tour() },
                     { label: 'Keyboard Shortcuts', icon: 'keyboard', kb: 'F1', action: () => this.shortcuts() },
                     { label: 'Scripting Reference', icon: 'file-code', action: () => this.panels.bottomTabs.select('script') },
                     '-',
-                    { label: 'About GamerKraft Engine', icon: 'info', action: () => UI.modal('About', h('div', { style: { width: '380px', lineHeight: 1.7 } }, h('b', 'GamerKraft Engine ' + GK.version), h('div.muted', 'Browser-native 3D game engine & level editor.'), h('div', 'Renderer: three.js r' + THREE.REVISION + ' • chunked voxel meshing with baked AO • procedural materials • PBR lighting • dynamic sky • GPU-instanced foliage'), h('div', 'Path tracer: WebGL2 • voxel DDA + BVH • global illumination • refraction • depth of field • denoiser • image, video and PNG-sequence output'), h('div', 'Runtime: fixed-step physics • scripting • HUD • gamepad & touch • single-file web packaging')), [{ label: 'Close', primary: true }], { icon: 'info' }) }
+                    { label: 'About GamerKraft Engine', icon: 'info', action: () => UI.modal('About', h('div', { style: { width: '380px', lineHeight: 1.7 } }, h('b', 'GamerKraft Engine ' + GK.version), h('div.muted', 'Browser-native 3D game engine & level editor.'), h('div', 'Renderer: three.js r' + THREE.REVISION + ' • chunked voxel meshing with baked AO • procedural materials • PBR lighting • dynamic sky • GPU-instanced foliage'), h('div', 'Ray tracer (real-time, in games too): traced shadows • reflections • refraction • ambient occlusion • one-bounce GI • temporal antialiasing'), h('div', 'Path tracer: WebGL2 • voxel DDA + BVH • global illumination • refraction • depth of field • denoiser • image, video and PNG-sequence output'), h('div.muted', 'Free and open source under the MIT License.'), h('div', 'Runtime: fixed-step physics • scripting • HUD • gamepad & touch • single-file web packaging')), [{ label: 'Close', primary: true }], { icon: 'info' }) }
                 ]
             };
             Object.keys(menus).forEach(name => {
@@ -460,8 +470,9 @@ GK.module('editor/app', { runtime: false }, function (GK) {
             render.addEventListener('mousedown', e => {
                 e.stopPropagation();
                 UI.menuAt(render, [{ head: 'Path Tracer' }, { label: 'Render Image…', icon: 'aperture', kb: 'Alt+R', action: () => GK.RenderStudio.open(ed, 'image') },
-                    { label: 'Render Animation…', icon: 'clapperboard', action: () => GK.RenderStudio.open(ed, 'anim') }, '-',
-                    { label: 'Path Traced Viewport', checked: ed.viewMode === 'pathtraced', action: () => ed.setViewMode(ed.viewMode === 'pathtraced' ? 'lit' : 'pathtraced') }]);
+                    { label: 'Render Animation…', icon: 'clapperboard', action: () => GK.RenderStudio.open(ed, 'anim') }, '-', { head: 'Real-time Ray Tracer' },
+                    { label: 'Ray Traced Viewport', checked: ed.viewMode === 'raytraced', action: () => ed.setViewMode(ed.viewMode === 'raytraced' ? 'lit' : 'raytraced') }]
+                    .concat(this._rtQualityItems(), ['-', { label: 'Path Traced Viewport', checked: ed.viewMode === 'pathtraced', action: () => ed.setViewMode(ed.viewMode === 'pathtraced' ? 'lit' : 'pathtraced') }]));
             });
             const settings = h('button.tb', { title: 'Engine scalability settings' }, UI.icon('settings', 16), h('span', 'Settings'), UI.icon('chevron-down', 10));
             settings.addEventListener('mousedown', e => {
@@ -481,14 +492,14 @@ GK.module('editor/app', { runtime: false }, function (GK) {
 
         _viewportBars() {
             const ed = this.ed;
-            const VIEW_MODES = { lit: 'Lit', unlit: 'Unlit', wireframe: 'Wireframe', pathtraced: 'Path Traced' };
+            const VIEW_MODES = { lit: 'Lit', unlit: 'Unlit', wireframe: 'Wireframe', raytraced: 'Ray Traced', pathtraced: 'Path Traced' };
             const L = document.getElementById('vp-left'), R = document.getElementById('vp-right');
             const vb = (content, title, action, on) => { const b = h('button.vp-btn' + (on ? '.on' : ''), { title }, content); b.addEventListener('mousedown', e => { e.stopPropagation(); action(b); }); return b; };
             const render = () => {
                 L.innerHTML = ''; R.innerHTML = '';
                 L.append(h('div.vp-group',
                     vb([UI.icon(ed.view === 'top' ? 'square' : 'box', 13), ed.view === 'top' ? 'Top' : 'Perspective', UI.icon('chevron-down', 10)], 'View', b => UI.menuAt(b, [{ label: 'Perspective', checked: ed.view === 'persp', action: () => ed.setView('persp') }, { label: 'Top (Orthographic)', checked: ed.view === 'top', action: () => ed.setView('top') }])),
-                    vb([UI.icon(ed.viewMode === 'pathtraced' ? 'aperture' : 'sun', 13), VIEW_MODES[ed.viewMode], UI.icon('chevron-down', 10)], 'View mode', b => UI.menuAt(b, Object.keys(VIEW_MODES).map(m => ({ label: VIEW_MODES[m], checked: ed.viewMode === m, action: () => ed.setViewMode(m) })))),
+                    vb([UI.icon(ed.viewMode === 'pathtraced' ? 'aperture' : ed.viewMode === 'raytraced' ? 'sparkles' : 'sun', 13), VIEW_MODES[ed.viewMode], UI.icon('chevron-down', 10)], 'View mode', b => UI.menuAt(b, Object.keys(VIEW_MODES).map(m => ({ label: VIEW_MODES[m], checked: ed.viewMode === m, action: () => ed.setViewMode(m) })))),
                     vb([UI.icon('eye', 13), 'Show', UI.icon('chevron-down', 10)], 'Show flags', b => UI.menuAt(b, [
                         { label: 'Grid', checked: ed.show.grid, action: () => { ed.show.grid = !ed.show.grid; ed.grid.visible = ed.show.grid; } },
                         { label: 'Editor Icons (Game View: G)', checked: ed.engine.worldView.editorVisuals, action: () => ed.engine.worldView.setEditorVisuals(!ed.engine.worldView.editorVisuals) },
@@ -517,6 +528,13 @@ GK.module('editor/app', { runtime: false }, function (GK) {
             [['X', 1, 0, 0, '#e5484d'], ['Y', 0, 1, 0, '#5ec04a'], ['Z', 0, 0, 1, '#3b82f6']].map(a => { const v = new THREE.Vector3(a[1], a[2], a[3]).applyQuaternion(q); return [a[0], v, a[4]]; })
                 .sort((a, b) => a[1].z - b[1].z).forEach(([n, v, c]) => { s += `<line x1="0" y1="0" x2="${v.x * 20}" y2="${-v.y * 20}" stroke="${c}" stroke-width="2.5"/><text x="${v.x * 25}" y="${-v.y * 25 + 3}" fill="${c}" font-size="9" font-weight="700" text-anchor="middle">${n}</text>`; });
             svg.innerHTML = s;
+            const rt = ed.engine.rt;
+            if (!this._rtBadge) { this._rtBadge = h('div#rt-badge.hidden'); document.getElementById('viewport').appendChild(this._rtBadge); }
+            this._rtBadge.classList.toggle('hidden', !rt || !!ed.pie);
+            if (rt && !ed.pie) {
+                const txt = rt.error ? 'Ray tracing stopped' : ['Ray Traced', GK.RayTracer.QUALITY[rt.options.quality].label, ed.engine.info.fps + ' fps', Math.round(rt.options.scale * 100) + '%'].join('  ·  ');
+                if (this._rtBadge.textContent !== txt) this._rtBadge.textContent = txt;
+            }
             const st = document.getElementById('vp-stats');
             st.classList.toggle('hidden', !ed.show.stats || !!ed.pie);
             if (ed.show.stats && !ed.pie) {
@@ -561,7 +579,9 @@ GK.module('editor/app', { runtime: false }, function (GK) {
             const log = (m, l) => ed.log(m, l || 'info', 'Cmd');
             log('> ' + line);
             const cmds = {
-                help: () => log('Commands: stat fps | r.shadows off|low|medium|high | r.pathtrace 0|1 | render [samples] | play | stop | save | mapcheck | tp x y z | fill x1 y1 z1 x2 y2 z2 block | clear | template <id> | time <0-24> | sky <preset> | viewmode lit|unlit|wireframe|pathtraced | blocks | undo | redo'),
+                help: () => log('Commands: stat fps | r.shadows off|low|medium|high | r.raytrace 0|1 | r.rt.quality low|medium|high|ultra | r.pathtrace 0|1 | render [samples] | play | stop | save | mapcheck | tp x y z | fill x1 y1 z1 x2 y2 z2 block | clear | template <id> | time <0-24> | sky <preset> | viewmode lit|unlit|wireframe|raytraced|pathtraced | blocks | undo | redo'),
+                'r.raytrace': () => ed.setViewMode(args[0] === '0' || (args[0] == null && ed.viewMode === 'raytraced') ? 'lit' : 'raytraced'),
+                'r.rt.quality': () => { if (!GK.RayTracer.QUALITY[args[0]]) return log('Ray tracing quality: ' + Object.keys(GK.RayTracer.QUALITY).join(', '), 'warn'); ed.history.setting('render.rt.quality', args[0]); },
                 'r.pathtrace': () => ed.setViewMode(args[0] === '0' || (args[0] == null && ed.viewMode === 'pathtraced') ? 'lit' : 'pathtraced'),
                 render: () => {
                     if (args[0] && !(+args[0] > 0)) return log('usage: render [samples]', 'error');
@@ -585,7 +605,7 @@ GK.module('editor/app', { runtime: false }, function (GK) {
                 template: () => { const t = GK.Templates.get(args[0]); if (!t) return log('Templates: ' + GK.Templates.list.map(x => x.id).join(', '), 'warn'); this.guard(() => this.newProject(t.id)); },
                 time: () => ed.history.setting('env.timeOfDay', U.clamp(+args[0] || 12, 0, 24)),
                 sky: () => { if (!GK.Sky.PRESETS[args[0]]) return log('Presets: ' + Object.keys(GK.Sky.PRESETS).join(', '), 'warn'); ed.history.setting('env.preset', args[0]); },
-                viewmode: () => { const m = args[0] || 'lit'; if (!['lit', 'unlit', 'wireframe', 'pathtraced'].includes(m)) return log('View modes: lit, unlit, wireframe, pathtraced', 'warn'); ed.setViewMode(m); },
+                viewmode: () => { const m = args[0] || 'lit'; if (!['lit', 'unlit', 'wireframe', 'raytraced', 'pathtraced'].includes(m)) return log('View modes: lit, unlit, wireframe, raytraced, pathtraced', 'warn'); ed.setViewMode(m); },
                 blocks: () => log(B.list.map(b => b.key).join(', '))
             };
             if (cmds[c]) { try { cmds[c](); } catch (e) { log(e.message, 'error'); } }
@@ -688,7 +708,7 @@ GK.module('editor/app', { runtime: false }, function (GK) {
                 ['#details-panel', 'Details & World Settings', 'Edit the selected actor’s transform and properties. World Settings holds the win condition, player tuning, sky, time of day and music.'],
                 ['#dock-bottom', 'Content Browser, Output Log & Level Script', 'Browse blocks and actors, read engine messages, and write a Level Script that reacts to gameplay events.'],
                 ['#toolbar .tb.play', 'Play In Editor', 'Test your game instantly inside the viewport (Alt+P). Press Esc to pause and Esc again to stop — the level is restored exactly.'],
-                ['#toolbar .tb:nth-last-child(3)', 'Render', 'Path trace photoreal stills, turntable videos and time-lapses of your level, free in the browser: global illumination, soft shadows, reflections, glass and water. Pick Path Traced in the viewport view-mode menu (next to Perspective) to preview it live.'],
+                ['#toolbar .tb:nth-last-child(3)', 'Render', 'Path trace photoreal stills, turntable videos and time-lapses of your level, free in the browser: global illumination, soft shadows, reflections, glass and water. The viewport view-mode menu (next to Perspective) has a real-time Ray Traced mode, which games can use too, and a Path Traced preview.'],
                 ['#toolbar .tb:nth-last-child(2)', 'Package', 'Platforms ▸ Package Project exports a single offline HTML file you can share or host anywhere, with touch and gamepad support.']
             ];
             let i = 0;

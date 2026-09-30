@@ -343,6 +343,7 @@ GK.module('editor/editor', { runtime: false }, function (GK) {
             this._applyCamera();
 
             this.world.on('reset', () => this.pruneSelection());
+            this.world.on('settings', path => { if (path.startsWith('render.rt') && this.viewMode === 'raytraced' && !this.pie) this.enableRayTracing(this.world.settings.render.rt); });
             this.world.on('resize', () => this._rebuildGrid());
             new ResizeObserver(() => this.resize()).observe(viewportEl);
         }
@@ -733,15 +734,34 @@ GK.module('editor/editor', { runtime: false }, function (GK) {
 
         setViewMode(m) {
             if (m === 'pathtraced' && !GK.RenderStudio.enableViewport(this)) return;
+            if (m === 'raytraced' && !this.enableRayTracing(this.world.settings.render.rt)) return;
+            if (m !== 'raytraced') this.engine.setRayTracing(false);
             if (m !== 'pathtraced') GK.RenderStudio.disableViewport(this);
             this.viewMode = m;
-            const lit = m === 'lit' || m === 'pathtraced';
+            const lit = m === 'lit' || m === 'pathtraced' || m === 'raytraced';
             GK.VoxelMaterial.setWireframe(m === 'wireframe');
             GK.Assets.setWireframe(m === 'wireframe');
             GK.VoxelMaterial.setUnlit(m === 'unlit');
             this.engine.sun.visible = lit;
             this.engine.hemi.intensity = lit ? this.engine.env.hemiIntensity : 1.6;
             this.emit('view');
+        }
+
+        // Real-time ray tracing on the engine; falls back to Lit with a message when unsupported or
+        // when the GPU drops it.
+        enableRayTracing(opts) {
+            const r = this.engine.setRayTracing(opts);
+            if (!r.ok) {
+                GK.UI.toast('Ray tracing is unavailable: ' + r.reason, 'error');
+                this.log('Ray tracing unavailable: ' + r.reason, 'error', 'LogRender');
+                return false;
+            }
+            this.engine.rt.onError = e => setTimeout(() => {
+                GK.UI.toast('Ray tracing stopped: ' + e.message, 'error');
+                this.log('Ray tracing stopped: ' + e.message, 'error', 'LogRender');
+                if (this.viewMode === 'raytraced') this.setViewMode('lit'); else this.engine.setRayTracing(false);
+            });
+            return true;
         }
 
         startPIE() {
@@ -753,7 +773,8 @@ GK.module('editor/editor', { runtime: false }, function (GK) {
             this.grid.visible = false;
             this._clearHover();
             this.regionBox.visible = false;
-            if (this.viewMode !== 'lit') this.setViewMode('lit');
+            if (this.viewMode !== 'lit' && this.viewMode !== 'raytraced') this.setViewMode('lit');
+            if (this.world.settings.render.rt.game && !this.engine.rt) this.enableRayTracing(this.world.settings.render.rt);
             const input = new GK.Input(this.engine.renderer.domElement);
             input.attach();
             const hud = new GK.HUD(this.vp);
@@ -785,6 +806,8 @@ GK.module('editor/editor', { runtime: false }, function (GK) {
             input.detach();
             hud.destroy();
             this.pie = null;
+            if (this.viewMode === 'raytraced') this.enableRayTracing(this.world.settings.render.rt);
+            else this.engine.setRayTracing(false);
             const s = this._camSave;
             this.cam.yaw = s.cam.yaw; this.cam.pitch = s.cam.pitch; this.cam.pos.copy(s.cam.pos); this.view = s.view;
             this.persp.fov = 70; this.persp.updateProjectionMatrix();

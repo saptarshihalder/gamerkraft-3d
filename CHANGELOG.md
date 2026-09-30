@@ -12,6 +12,9 @@ All notable changes to GamerKraft 3D are documented here. The format follows [Ke
 
 ### Added
 
+- A real-time ray tracer that works in the editor, in Play In Editor and in packaged games. It traces voxel and actor visibility, sun and point-light shadows, reflections, refraction through glass, water and slime, ambient occlusion and (Ultra) one-bounce GI. A temporal pass antialiases and denoises it, and three.js draws helpers, particles and transparent effects on top using the traced depth. It has Low/Medium/High/Ultra presets and a resolution scale, a Ray Traced view mode, `r.raytrace` and `r.rt.quality` console commands, and a World Settings section. A project option starts packaged games with ray tracing on. Players can switch it and its quality in the pause menu, and their choice is remembered.
+- A two-level BVH (shared per-geometry BLASes placed by instances under a per-frame TLAS) and tracing GLSL shared by the ray tracer and the path tracer.
+- An MIT `LICENSE` file (the project already declared MIT). It is also published with the site, packaged games carry a license notice, and the README lists third-party licenses.
 - A built-in path tracer written directly against WebGL2. It renders voxels (two-level DDA over a 3D texture) and actor meshes (SAH BVH) with global illumination, soft shadows, GGX reflections, refraction through glass, water and slime, water scattering, torch and glowing-block lighting, depth of field, the level's sky and fog, and an edge-aware denoiser.
 - A Path Traced viewport mode that refines progressively and follows edits live.
 - A Render window (`Alt+R`, **Render** menu and toolbar) for still images up to 8K, saved as PNG or copied to the clipboard.
