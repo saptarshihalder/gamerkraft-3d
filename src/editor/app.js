@@ -397,12 +397,19 @@ GK.module('editor/app', { runtime: false }, function (GK) {
                     '-',
                     { label: 'Package Project…', icon: 'package', action: () => this.packageDialog() }
                 ],
+                Render: () => [
+                    { label: 'Render Image…', icon: 'aperture', kb: 'Alt+R', action: () => GK.RenderStudio.open(ed, 'image') },
+                    { label: 'Render Animation…', icon: 'clapperboard', action: () => GK.RenderStudio.open(ed, 'anim') },
+                    '-',
+                    { label: 'Path Traced Viewport', checked: ed.viewMode === 'pathtraced', action: () => ed.setViewMode(ed.viewMode === 'pathtraced' ? 'lit' : 'pathtraced') },
+                    { label: 'Autofocus on Viewport Centre', icon: 'focus', action: () => GK.RenderStudio.autofocus(ed) }
+                ],
                 Help: () => [
                     { label: 'Quick Start Tour', icon: 'graduation-cap', action: () => this.tour() },
                     { label: 'Keyboard Shortcuts', icon: 'keyboard', kb: 'F1', action: () => this.shortcuts() },
                     { label: 'Scripting Reference', icon: 'file-code', action: () => this.panels.bottomTabs.select('script') },
                     '-',
-                    { label: 'About GamerKraft Engine', icon: 'info', action: () => UI.modal('About', h('div', { style: { width: '380px', lineHeight: 1.7 } }, h('b', 'GamerKraft Engine ' + GK.version), h('div.muted', 'Browser-native 3D game engine & level editor.'), h('div', 'Renderer: three.js r' + THREE.REVISION + ' • chunked voxel meshing with baked AO • procedural materials • PBR lighting • dynamic sky • GPU-instanced foliage'), h('div', 'Runtime: fixed-step physics • scripting • HUD • gamepad & touch • single-file web packaging')), [{ label: 'Close', primary: true }], { icon: 'info' }) }
+                    { label: 'About GamerKraft Engine', icon: 'info', action: () => UI.modal('About', h('div', { style: { width: '380px', lineHeight: 1.7 } }, h('b', 'GamerKraft Engine ' + GK.version), h('div.muted', 'Browser-native 3D game engine & level editor.'), h('div', 'Renderer: three.js r' + THREE.REVISION + ' • chunked voxel meshing with baked AO • procedural materials • PBR lighting • dynamic sky • GPU-instanced foliage'), h('div', 'Path tracer: WebGL2 • voxel DDA + BVH • global illumination • refraction • depth of field • denoiser • image, video and PNG-sequence output'), h('div', 'Runtime: fixed-step physics • scripting • HUD • gamepad & touch • single-file web packaging')), [{ label: 'Close', primary: true }], { icon: 'info' }) }
                 ]
             };
             Object.keys(menus).forEach(name => {
@@ -449,6 +456,13 @@ GK.module('editor/app', { runtime: false }, function (GK) {
             playMenu.addEventListener('mousedown', e => { e.stopPropagation(); UI.menuAt(playMenu, [{ label: 'Play in Viewport', icon: 'play', kb: 'Alt+P', action: () => ed.startPIE() }, { label: 'Play Standalone (new window)', icon: 'app-window', action: () => this.playStandalone() }]); });
             const pkg = h('button.tb', { title: 'Platforms / packaging' }, UI.icon('package', 16), h('span', 'Platforms'), UI.icon('chevron-down', 10));
             pkg.addEventListener('mousedown', e => { e.stopPropagation(); UI.menuAt(pkg, [{ head: 'Web (HTML5)' }, { label: 'Package Project…', icon: 'package', action: () => this.packageDialog() }, { label: 'Play Standalone', icon: 'app-window', action: () => this.playStandalone() }, '-', { label: 'Map Check', icon: 'list-checks', action: () => this.mapCheck() }]); });
+            const render = h('button.tb', { title: 'Path traced rendering' }, UI.icon('aperture', 16), h('span', 'Render'), UI.icon('chevron-down', 10));
+            render.addEventListener('mousedown', e => {
+                e.stopPropagation();
+                UI.menuAt(render, [{ head: 'Path Tracer' }, { label: 'Render Image…', icon: 'aperture', kb: 'Alt+R', action: () => GK.RenderStudio.open(ed, 'image') },
+                    { label: 'Render Animation…', icon: 'clapperboard', action: () => GK.RenderStudio.open(ed, 'anim') }, '-',
+                    { label: 'Path Traced Viewport', checked: ed.viewMode === 'pathtraced', action: () => ed.setViewMode(ed.viewMode === 'pathtraced' ? 'lit' : 'pathtraced') }]);
+            });
             const settings = h('button.tb', { title: 'Engine scalability settings' }, UI.icon('settings', 16), h('span', 'Settings'), UI.icon('chevron-down', 10));
             settings.addEventListener('mousedown', e => {
                 e.stopPropagation();
@@ -459,7 +473,7 @@ GK.module('editor/app', { runtime: false }, function (GK) {
                         { label: 'Viewport Stats', checked: ed.show.stats, action: () => { ed.show.stats = !ed.show.stats; } }]));
             });
             tb.append(btn('save', '', 'Save (Ctrl+S)', () => this.save()), btn('folder-open', 'Content', 'Open Content Browser', () => { if (this._hidden && this._hidden.bottom) this.togglePanel('bottom'); this.panels.bottomTabs.select('content'); }), h('div.sep'),
-                modeBtn, add, h('div.grow'), play, pause, stop, playMenu, h('div.grow'), btn('list-checks', '', 'Map Check', () => this.mapCheck()), pkg, settings);
+                modeBtn, add, h('div.grow'), play, pause, stop, playMenu, h('div.grow'), btn('list-checks', '', 'Map Check', () => this.mapCheck()), render, pkg, settings);
             const sync = () => { const on = !!ed.pie; play.disabled = on; pause.disabled = !on; stop.disabled = !on; };
             ed.on('pie', sync);
             sync();
@@ -467,13 +481,14 @@ GK.module('editor/app', { runtime: false }, function (GK) {
 
         _viewportBars() {
             const ed = this.ed;
+            const VIEW_MODES = { lit: 'Lit', unlit: 'Unlit', wireframe: 'Wireframe', pathtraced: 'Path Traced' };
             const L = document.getElementById('vp-left'), R = document.getElementById('vp-right');
             const vb = (content, title, action, on) => { const b = h('button.vp-btn' + (on ? '.on' : ''), { title }, content); b.addEventListener('mousedown', e => { e.stopPropagation(); action(b); }); return b; };
             const render = () => {
                 L.innerHTML = ''; R.innerHTML = '';
                 L.append(h('div.vp-group',
                     vb([UI.icon(ed.view === 'top' ? 'square' : 'box', 13), ed.view === 'top' ? 'Top' : 'Perspective', UI.icon('chevron-down', 10)], 'View', b => UI.menuAt(b, [{ label: 'Perspective', checked: ed.view === 'persp', action: () => ed.setView('persp') }, { label: 'Top (Orthographic)', checked: ed.view === 'top', action: () => ed.setView('top') }])),
-                    vb([UI.icon('sun', 13), { lit: 'Lit', unlit: 'Unlit', wireframe: 'Wireframe' }[ed.viewMode], UI.icon('chevron-down', 10)], 'View mode', b => UI.menuAt(b, ['lit', 'unlit', 'wireframe'].map(m => ({ label: m[0].toUpperCase() + m.slice(1), checked: ed.viewMode === m, action: () => ed.setViewMode(m) })))),
+                    vb([UI.icon(ed.viewMode === 'pathtraced' ? 'aperture' : 'sun', 13), VIEW_MODES[ed.viewMode], UI.icon('chevron-down', 10)], 'View mode', b => UI.menuAt(b, Object.keys(VIEW_MODES).map(m => ({ label: VIEW_MODES[m], checked: ed.viewMode === m, action: () => ed.setViewMode(m) })))),
                     vb([UI.icon('eye', 13), 'Show', UI.icon('chevron-down', 10)], 'Show flags', b => UI.menuAt(b, [
                         { label: 'Grid', checked: ed.show.grid, action: () => { ed.show.grid = !ed.show.grid; ed.grid.visible = ed.show.grid; } },
                         { label: 'Editor Icons (Game View: G)', checked: ed.engine.worldView.editorVisuals, action: () => ed.engine.worldView.setEditorVisuals(!ed.engine.worldView.editorVisuals) },
@@ -546,7 +561,14 @@ GK.module('editor/app', { runtime: false }, function (GK) {
             const log = (m, l) => ed.log(m, l || 'info', 'Cmd');
             log('> ' + line);
             const cmds = {
-                help: () => log('Commands: stat fps | r.shadows off|low|medium|high | play | stop | save | mapcheck | tp x y z | fill x1 y1 z1 x2 y2 z2 block | clear | template <id> | time <0-24> | sky <preset> | viewmode lit|unlit|wireframe | blocks | undo | redo'),
+                help: () => log('Commands: stat fps | r.shadows off|low|medium|high | r.pathtrace 0|1 | render [samples] | play | stop | save | mapcheck | tp x y z | fill x1 y1 z1 x2 y2 z2 block | clear | template <id> | time <0-24> | sky <preset> | viewmode lit|unlit|wireframe|pathtraced | blocks | undo | redo'),
+                'r.pathtrace': () => ed.setViewMode(args[0] === '0' || (args[0] == null && ed.viewMode === 'pathtraced') ? 'lit' : 'pathtraced'),
+                render: () => {
+                    if (args[0] && !(+args[0] > 0)) return log('usage: render [samples]', 'error');
+                    if (args[0]) ed.history.setting('render.samples', Math.round(+args[0]));
+                    const win = GK.RenderStudio.open(ed, 'image');
+                    if (win) win.renderImage();
+                },
                 stat: () => { ed.show.stats = !ed.show.stats; },
                 'r.shadows': () => { this.prefs.shadows = args[0] || 'high'; ed.engine.setShadowQuality(this.prefs.shadows); store.set(K_PREFS, this.prefs); },
                 play: () => ed.startPIE(), stop: () => ed.stopPIE(), save: () => this.save(), mapcheck: () => this.mapCheck(),
@@ -563,7 +585,7 @@ GK.module('editor/app', { runtime: false }, function (GK) {
                 template: () => { const t = GK.Templates.get(args[0]); if (!t) return log('Templates: ' + GK.Templates.list.map(x => x.id).join(', '), 'warn'); this.guard(() => this.newProject(t.id)); },
                 time: () => ed.history.setting('env.timeOfDay', U.clamp(+args[0] || 12, 0, 24)),
                 sky: () => { if (!GK.Sky.PRESETS[args[0]]) return log('Presets: ' + Object.keys(GK.Sky.PRESETS).join(', '), 'warn'); ed.history.setting('env.preset', args[0]); },
-                viewmode: () => ed.setViewMode(args[0] || 'lit'),
+                viewmode: () => { const m = args[0] || 'lit'; if (!['lit', 'unlit', 'wireframe', 'pathtraced'].includes(m)) return log('View modes: lit, unlit, wireframe, pathtraced', 'warn'); ed.setViewMode(m); },
                 blocks: () => log(B.list.map(b => b.key).join(', '))
             };
             if (cmds[c]) { try { cmds[c](); } catch (e) { log(e.message, 'error'); } }
@@ -581,6 +603,7 @@ GK.module('editor/app', { runtime: false }, function (GK) {
                 }
                 const k = e.code;
                 if ((e.altKey && k === 'KeyP') || k === 'F5') { e.preventDefault(); ed.startPIE(); return; }
+                if (e.altKey && k === 'KeyR') { e.preventDefault(); GK.RenderStudio.open(ed, 'image'); return; }
                 if (k === 'F1') { e.preventDefault(); this.shortcuts(); return; }
                 if (ctrl) {
                     const map = { KeyZ: () => e.shiftKey ? ed.history.redo() : ed.history.undo(), KeyY: () => ed.history.redo(), KeyS: () => this.save(), KeyD: () => ed.duplicateSelected(), KeyC: () => ed.copy(), KeyV: () => ed.paste(), KeyN: () => this.projectBrowser(), KeyO: () => this.projectBrowser(), KeyA: () => ed.select(ed.world.actors.filter(a => !A.get(a.type).foliage).map(a => a.id)) };
@@ -613,7 +636,7 @@ GK.module('editor/app', { runtime: false }, function (GK) {
             const rows = [['Fly camera', 'Hold RMB + W A S D Q E (wheel = speed)'], ['Orbit / Pan', 'Alt + LMB drag / MMB drag'], ['Focus selection', 'F'], ['Move / Rotate / Scale', 'W / E / R (Space cycles)'],
                 ['Modes', 'Shift+1 Select • Shift+2 Build • Shift+3 Landscape • Shift+4 Foliage'], ['Build tools', 'B brush • V box • X erase • P paint • G fill • I pick • [ ] size'],
                 ['Undo / Redo', 'Ctrl+Z / Ctrl+Y'], ['Duplicate / Delete', 'Ctrl+D / Del'], ['Copy / Paste', 'Ctrl+C / Ctrl+V'], ['Snap to floor', 'End'], ['Rename', 'F2'], ['Game view', 'G (select mode)'],
-                ['Save', 'Ctrl+S'], ['Play / Stop', 'Alt+P or F5 / Esc, F10'], ['In game', 'WASD move • Mouse look • Space jump • Shift sprint • Click act • C camera']];
+                ['Save', 'Ctrl+S'], ['Play / Stop', 'Alt+P or F5 / Esc, F10'], ['Render Image', 'Alt+R'], ['In game', 'WASD move • Mouse look • Space jump • Shift sprint • Click act • C camera']];
             UI.modal('Keyboard Shortcuts', h('div', { style: { width: '560px' } }, rows.map(r => h('div.form-row', { style: { gridTemplateColumns: '170px 1fr', marginBottom: '6px' } }, h('b', r[0]), h('span.muted', r[1])))), [{ label: 'Close', primary: true }], { icon: 'keyboard' });
         },
 
@@ -665,6 +688,7 @@ GK.module('editor/app', { runtime: false }, function (GK) {
                 ['#details-panel', 'Details & World Settings', 'Edit the selected actor’s transform and properties. World Settings holds the win condition, player tuning, sky, time of day and music.'],
                 ['#dock-bottom', 'Content Browser, Output Log & Level Script', 'Browse blocks and actors, read engine messages, and write a Level Script that reacts to gameplay events.'],
                 ['#toolbar .tb.play', 'Play In Editor', 'Test your game instantly inside the viewport (Alt+P). Press Esc to pause and Esc again to stop — the level is restored exactly.'],
+                ['#toolbar .tb:nth-last-child(3)', 'Render', 'Path trace photoreal stills, turntable videos and time-lapses of your level, free in the browser: global illumination, soft shadows, reflections, glass and water. Pick Path Traced in the viewport view-mode menu (next to Perspective) to preview it live.'],
                 ['#toolbar .tb:nth-last-child(2)', 'Package', 'Platforms ▸ Package Project exports a single offline HTML file you can share or host anywhere, with touch and gamepad support.']
             ];
             let i = 0;

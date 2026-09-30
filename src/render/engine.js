@@ -26,7 +26,7 @@ GK.module('render/engine', function (GK) {
             const on = (e, fn) => this._off.push(world.on(e, fn));
             on('voxel', (x, y, z) => this.markVoxel(x, y, z));
             on('chunks', keys => keys.length > 200 ? this.rebuildAll() : keys.forEach(k => this.markChunk(k, true)));
-            on('reset', () => this.rebuildAll(true));
+            on('reset', () => { this.rebuildAll(true); this.engine.applyEnvironment(); });
             on('actor:add', a => this.addActor(a));
             on('actor:remove', a => this.removeActor(a.id));
             on('actor:change', a => this.refreshActor(a));

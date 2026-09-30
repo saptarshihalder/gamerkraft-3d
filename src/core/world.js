@@ -57,7 +57,28 @@ GK.module('core/world', function (GK) {
             exposure: 1
         },
         audio: { music: 'calm', musicVolume: 0.5 },
-        build: { hotbar: ['grass', 'dirt', 'stone', 'planks', 'brick', 'glass', 'cobblestone', 'sand', 'leaves'] }
+        build: { hotbar: ['grass', 'dirt', 'stone', 'planks', 'brick', 'glass', 'cobblestone', 'sand', 'leaves'] },
+        render: {
+            preset: '1080p',
+            width: 1920,
+            height: 1080,
+            samples: 256,
+            bounces: 4,
+            denoise: true,
+            clamp: 6,
+            fov: 70,
+            aperture: 0,
+            focusDistance: 10,
+            exposure: 1,
+            tonemap: 'aces',
+            skyLight: 1,
+            emissive: 2,
+            sunSoftness: 1.2,
+            fog: true,
+            viewportScale: 0.75,
+            viewportSamples: 1024,
+            anim: { type: 'orbit', frames: 120, fps: 30, degrees: 360, samples: 64, startTime: 6, endTime: 20, output: 'video' }
+        }
     };
 
     const LEGACY_BLOCKS = { 1: 3, 2: 1, 3: 2, 4: 12, 5: 14, 6: 19, 8: 8, 9: 38, 18: 41, 20: 42 };

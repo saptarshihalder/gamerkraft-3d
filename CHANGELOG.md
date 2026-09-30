@@ -12,6 +12,12 @@ All notable changes to GamerKraft 3D are documented here. The format follows [Ke
 
 ### Added
 
+- A built-in path tracer written directly against WebGL2. It renders voxels (two-level DDA over a 3D texture) and actor meshes (SAH BVH) with global illumination, soft shadows, GGX reflections, refraction through glass, water and slime, water scattering, torch and glowing-block lighting, depth of field, the level's sky and fog, and an edge-aware denoiser.
+- A Path Traced viewport mode that refines progressively and follows edits live.
+- A Render window (`Alt+R`, **Render** menu and toolbar) for still images up to 8K, saved as PNG or copied to the clipboard.
+- Animation rendering: turntables and day-cycle time-lapses, output as WebM video (WebCodecs with exact frame timing, MediaRecorder fallback) and/or a ZIP of PNG frames.
+- Render settings are saved with each project (`settings.render`). New console commands: `render [samples]` and `r.pathtrace 0|1`.
+- Unit tests for scene packing, the BVH, the ZIP and WebM writers and animation cameras, and a browser smoke test that renders a still, an animation and the viewport.
 - Editor modes (Selection, Build, Landscape, Foliage), a move/rotate/scale gizmo with snapping, and block tools (brush, box, erase, paint, flood fill, eyedropper).
 - Terrain sculpting and a procedural terrain generator with five biomes.
 - Transactional undo/redo, Play In Editor with exact level rollback, Play From Here, Map Check, a top orthographic view, and lit/unlit/wireframe view modes.
@@ -48,6 +54,7 @@ All notable changes to GamerKraft 3D are documented here. The format follows [Ke
 
 ### Fixed
 
+- Opening a project now applies its sky and time of day to the viewport. Before, the previous project's environment stayed until a sky setting changed.
 - A deploy can no longer half-break the live editor: the deployed `index.html` is now the same fully inlined single-file build as the offline editor, so page markup and engine update atomically and caches cannot serve a mixed version. The engine also null-guards the status bar and developer console so stale cached markup degrades gracefully instead of killing the frame loop.
 
 - Published games are playable again: the exporter now bundles the engine's whole module graph into the standalone HTML file instead of embedding only `engine.js`, whose relative imports cannot resolve outside the repository.
