@@ -1,15 +1,10 @@
 GK.module('render/rt-scene', function (GK) {
     'use strict';
 
-    // Packs a World (voxels, actor meshes, lights) into flat typed arrays for the path tracer and
-    // the real-time ray tracer. DOM-free so it can be unit tested; the GPU side lives in
-    // render/pathtracer and render/raytracer. Also part of packaged games.
-
     const B = GK.Blocks, A = GK.Actors, U = GK.Util, World = GK.World;
     const TEX_W = 2048;
     const BRICK = 4;
     const KIND = { OPAQUE: 0, CUTOUT: 1, DIELECTRIC: 2 };
-    // [index of refraction, absorption per block, in-scattering strength]
     const DIELECTRIC = { glass: [1.5, 0.08, 0], water: [1.33, 0.22, 1.2], slime: [1.4, 0.9, 0.6] };
     const MAT_TEXELS = 3, TRI_TEXELS = 3, NODE_TEXELS = 2, LIGHT_TEXELS = 2, INST_TEXELS = 4;
     const FLAG_SHADOW = 1, FLAG_UNLIT = 2;
@@ -17,8 +12,6 @@ GK.module('render/rt-scene', function (GK) {
 
     const RT = GK.RTScene = { TEX_W, BRICK, MAX_LEAF, KIND, MAT_TEXELS, TRI_TEXELS, NODE_TEXELS, LIGHT_TEXELS, INST_TEXELS, FLAG_SHADOW, FLAG_UNLIT };
 
-    // 256 x 5 RGBA rows: top, side, bottom (linear rgb + pattern), [kind, ior, absorption, lowered liquid top],
-    // [in-scattering, 0, 0, 0].
     RT.BLOCK_ROWS = 5;
     RT.blockTable = function () {
         const out = new Float32Array(256 * RT.BLOCK_ROWS * 4);
@@ -38,7 +31,6 @@ GK.module('render/rt-scene', function (GK) {
         return true;
     }
 
-    // Chunk-aligned bounds of every non-empty chunk, in world voxel coordinates.
     RT.voxelBounds = function (world) {
         const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
         for (const [k, c] of world.chunks) {
@@ -50,7 +42,6 @@ GK.module('render/rt-scene', function (GK) {
         return { min: lo.map(v => v * 16), size: [0, 1, 2].map(i => (hi[i] - lo[i] + 1) * 16), empty: false };
     };
 
-    // Texel (x, y, z) lives at x + y*X + z*X*Y, matching a WebGL 3D texture of width X, height Y, depth Z.
     RT.packVoxels = function (world, maxDim) {
         const b = RT.voxelBounds(world);
         const cap = maxDim || 2048;
@@ -87,8 +78,6 @@ GK.module('render/rt-scene', function (GK) {
         }
     };
 
-    // Re-copies one chunk after an edit. Returns the texture regions to upload, or null when the
-    // chunk lies outside the packed bounds (the caller must repack everything).
     RT.updateChunk = function (vox, world, key) {
         const p = World.ckeyParts(key);
         const c = world.chunks.get(key);
@@ -103,8 +92,6 @@ GK.module('render/rt-scene', function (GK) {
         for (let z = 0; z < n; z++) for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) bricks[x + y * n + z * n * n] = vox.bricks[bo[0] + x + (bo[1] + y) * BX + (bo[2] + z) * BX * BY];
         return { offset: o, data, brickOffset: bo, brickSize: n, bricks };
     };
-
-    // ---- actor meshes -> triangles ----------------------------------------------------------
 
     const materialRecord = RT.materialRecord = function (m, tint, cast) {
         const col = m.color ? [m.color.r, m.color.g, m.color.b] : [1, 1, 1];
@@ -122,8 +109,6 @@ GK.module('render/rt-scene', function (GK) {
         };
     };
 
-    // Collects renderable actor geometry the way a packaged game would show it: editor-only actors,
-    // editor-only parts, hidden actors, lines and helpers are left out.
     RT.collectMeshes = function (worldView) {
         const out = [];
         const world = worldView.world;
@@ -196,8 +181,6 @@ GK.module('render/rt-scene', function (GK) {
         return { count: mat.length, pos: new Float32Array(pos), nor: new Float32Array(nor), mat: new Int32Array(mat), materials };
     };
 
-    // ---- BVH (binned SAH, children stored as pairs: left, left + 1) --------------------------
-
     RT.buildBVH = function (tris, opts) {
         const n = tris.count, P = tris.pos;
         const bmin = new Float32Array(n * 3), bmax = new Float32Array(n * 3);
@@ -210,7 +193,6 @@ GK.module('render/rt-scene', function (GK) {
         return RT.buildBVHBounds(n, bmin, bmax, opts);
     };
 
-    // Binned-SAH BVH over n primitives given their bounds; leaves reference ranges of `order`.
     RT.buildBVHBounds = function (n, bmin, bmax, opts) {
         const maxLeaf = (opts && opts.maxLeaf) || 4, BINS = 12;
         const order = new Uint32Array(n);
@@ -307,7 +289,6 @@ GK.module('render/rt-scene', function (GK) {
 
     const rows = texels => Math.max(1, Math.ceil(texels / TEX_W));
 
-    // Triangles in BVH order: [v0, matIndex] [v1 - v0] [v2 - v0]; normals: [n0] [n1] [n2].
     RT.packTriangles = function (tris, bvh) {
         const n = tris.count, h = rows(n * TRI_TEXELS);
         const tri = new Float32Array(TEX_W * h * 4), nor = new Float32Array(TEX_W * h * 4);
@@ -330,7 +311,6 @@ GK.module('render/rt-scene', function (GK) {
         return { data: out, width: TEX_W, height: h };
     };
 
-    // Materials: [rgb, opacity] [emissive rgb, roughness] [metalness, flags, 0, 0].
     RT.packMaterials = function (materials) {
         const h = rows(Math.max(1, materials.length) * MAT_TEXELS);
         const out = new Float32Array(TEX_W * h * 4);
@@ -341,12 +321,9 @@ GK.module('render/rt-scene', function (GK) {
         return { data: out, width: TEX_W, height: h };
     };
 
-    // Average emitted radiance of each self-lit block pattern (mirrors gkSurface in voxel-material).
     const EMISSIVE = { 19: c => [0.95, 0.4, 0.06], 22: c => [c.r * 0.97, c.g * 0.97, c.b * 0.97], 32: c => [c.r * 1.28, c.g * 1.28, c.b * 1.28] };
     RT.MAX_BLOCK_LIGHTS = 64;
 
-    // Exposed emissive voxels become cube area lights when there are few enough to sample directly;
-    // larger emitters (lava lakes) are found reliably by ordinary path sampling instead.
     RT.collectBlockLights = function (world) {
         const out = [];
         const emits = new Array(256).fill(null);
@@ -366,8 +343,6 @@ GK.module('render/rt-scene', function (GK) {
         return out;
     };
 
-    // Lights: [position, range] [color * intensity, radius]. Block lights store their min corner and
-    // radius -1; they are only listed when every exposed emissive voxel fits (blockLights = true).
     RT.collectLights = function (world) {
         const list = [];
         for (const a of world.actors) {
@@ -386,18 +361,12 @@ GK.module('render/rt-scene', function (GK) {
         return { data, width: TEX_W, height: h, count: list.length, blockLights: !!blocks };
     };
 
-    // ---- two-level acceleration structure ------------------------------------------------------
-    // Bottom-level BVHs (BLAS) share one node/triangle pool: node children and leaf triangles are
-    // relative to the BLAS's own base. Instances place a BLAS in the world through an inverse
-    // affine transform, and a top-level BVH (TLAS) over instance bounds is rebuilt as they move.
-
     class GeometryStore {
         constructor() { this.entries = new Map(); this.clear(); }
         clear() {
             this.nodes = new Float32Array(8 * 64); this.tri = new Float32Array(12 * 64); this.nor = new Float32Array(12 * 64);
             this.nodeCount = 0; this.triCount = 0; this.entries.clear(); this.version = (this.version || 0) + 1;
         }
-        // undefined: never added; null: added but has no triangles.
         get(key) { return this.entries.get(key); }
         _grow(name, need) {
             if (this[name].length >= need) return;
@@ -407,7 +376,6 @@ GK.module('render/rt-scene', function (GK) {
             next.set(this[name]);
             this[name] = next;
         }
-        // tris: { count, pos, nor, mat } in the BLAS's local space; mat -1 lets instances pick.
         add(key, tris) {
             if (!tris.count) { this.entries.set(key, null); return null; }
             const bvh = RT.buildBVH(tris);
@@ -437,7 +405,6 @@ GK.module('render/rt-scene', function (GK) {
     }
     RT.GeometryStore = GeometryStore;
 
-    // Local-space triangles of a BufferGeometry for a shared BLAS (material chosen per instance).
     RT.geometryTriangles = function (g, flat) {
         const P = g.attributes.position, Nrm = g.attributes.normal, idx = g.index;
         if (!P) return { count: 0, pos: new Float32Array(0), nor: new Float32Array(0), mat: new Int32Array(0) };
@@ -458,7 +425,6 @@ GK.module('render/rt-scene', function (GK) {
     };
 
     const _inv = new THREE.Matrix4(), _corner = new THREE.Vector3();
-    // Instance of a BLAS under a world matrix: inverse rows (3 x vec4), world bounds, material, flags.
     RT.instance = function (entry, matrix, material, flags) {
         if (!entry || !(Math.abs(matrix.determinant()) > 1e-12)) return null;
         const m = _inv.copy(matrix).invert().elements;
@@ -474,8 +440,6 @@ GK.module('render/rt-scene', function (GK) {
     };
     RT.IDENTITY = new THREE.Matrix4();
 
-    // TLAS over instance bounds plus the per-instance records in TLAS order:
-    // [inv row 0] [inv row 1] [inv row 2] [nodeBase, triBase, material (-1 = per triangle), flags].
     RT.packInstances = function (instances) {
         const n = instances.length;
         const bmin = new Float32Array(n * 3), bmax = new Float32Array(n * 3);
@@ -492,7 +456,6 @@ GK.module('render/rt-scene', function (GK) {
         return { instances: { data, width: TEX_W, height: ih }, tlas: { data: tlas, width: TEX_W, height: th }, count: n };
     };
 
-    // Everything the path tracer needs for actors: one world-space BLAS under an identity instance.
     RT.buildGeometry = function (worldView) {
         const tris = RT.triangulate(RT.collectMeshes(worldView));
         const store = new GeometryStore();
@@ -503,8 +466,6 @@ GK.module('render/rt-scene', function (GK) {
             triCount: tris.count, materials: RT.packMaterials(tris.materials), materialCount: tris.materials.length };
     };
 
-    // Closest-hit reference traversal over the packed arrays (TLAS -> instance -> BLAS); mirrors the
-    // GLSL in render/rt-glsl and is used by tests.
     RT.raycastGeometry = function (geo, ro, rd, tMax) {
         if (!geo.instCount) return null;
         const N = geo.nodes.data, T = geo.tris.tri, TL = geo.tlas.data, I = geo.instances.data;
@@ -558,7 +519,6 @@ GK.module('render/rt-scene', function (GK) {
         return hit;
     };
 
-    // Camera description (position, basis, projection) for the tracers from a three.js camera.
     RT.cameraFrom = function (cam, extra) {
         cam.updateMatrixWorld();
         const e = cam.matrixWorld.elements;
@@ -574,12 +534,10 @@ GK.module('render/rt-scene', function (GK) {
         return Object.assign(out, extra || {});
     };
 
-    // Plain environment description (linear colors) derived from the level's sky settings.
     RT.environment = function (settingsEnv, overrides) {
         const env = Object.assign({}, settingsEnv, overrides || {});
         return RT.environmentFrom(GK.Sky.compute(env), env.ambient);
     };
-    // Same description from an environment GK.Sky.compute() already produced (the engine's).
     RT.environmentFrom = function (e, ambient) {
         const c = v => [v.r, v.g, v.b];
         return {

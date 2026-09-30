@@ -5,10 +5,6 @@ GK.module('editor/app', { runtime: false }, function (GK) {
     const store = U.store;
     const K_INDEX = 'gk3.projects', K_PROJ = 'gk3.p.', K_LAST = 'gk3.last', K_PREFS = 'gk3.prefs';
 
-    // Projects are kept in IndexedDB (room for hundreds of MB), with localStorage as the fallback
-    // where IndexedDB is unavailable. The project list lives in memory so menus stay synchronous.
-    // Because IndexedDB writes are asynchronous, closing the tab also leaves a synchronous rescue
-    // copy in localStorage that the next visit folds back in.
     const K_RESCUE = 'gk3.rescue';
     const idb = {
         open() {
@@ -41,8 +37,6 @@ GK.module('editor/app', { runtime: false }, function (GK) {
             catch (e) { this.db = null; this._rescue(); return; }
             const known = await idb.run(this.db, 'readonly', (p, i) => i.getAll());
             const ids = new Set(known.map(p => p.id));
-            // Move localStorage projects over one at a time. One that fails to move stays where it
-            // is and stays listed (load() falls back to it); the next visit tries again.
             const kept = [];
             for (const entry of this.index) {
                 if (ids.has(entry.id)) { store.remove(K_PROJ + entry.id); continue; }
@@ -59,7 +53,6 @@ GK.module('editor/app', { runtime: false }, function (GK) {
             this.index = known;
             await this._rescue();
         },
-        // Folds a tab-close rescue copy back in when it is newer than the stored project.
         async _rescue() {
             const r = store.get(K_RESCUE, null);
             if (!r || !r.data || !r.data.meta) return;
@@ -191,10 +184,7 @@ GK.module('editor/app', { runtime: false }, function (GK) {
             this.projectBrowser(true);
         },
 
-        // Opens a game from a Remix link as a new project. A Level Script is code, so the user
-        // decides whether to keep one from someone else before it can ever run.
         async openShared(data) {
-            // The link is cleared once the copy exists, so a reload does not import it twice.
             const clear = () => history.replaceState(null, '', location.pathname + location.search);
             let project;
             try { project = await GK.Share.decode(data); }
@@ -234,7 +224,6 @@ GK.module('editor/app', { runtime: false }, function (GK) {
             document.title = (w.meta.name || 'Untitled') + ' — GamerKraft Engine';
         },
 
-        // Resolves to true once the project is stored in this browser.
         save(silent) {
             const ed = this.ed;
             if (ed.pie) { UI.toast('Stop Play before saving', 'warn'); return Promise.resolve(false); }
@@ -299,7 +288,6 @@ GK.module('editor/app', { runtime: false }, function (GK) {
             inp.click();
         },
 
-        // A link anyone can open to play (or remix) this game, with the whole game inside the link.
         async shareDialog() {
             const ed = this.ed, w = ed.world;
             if (ed.pie) { UI.toast('Stop Play before sharing', 'warn'); return; }
@@ -911,7 +899,6 @@ GK.module('editor/app', { runtime: false }, function (GK) {
         }
     };
 
-    // A #play= link turns this page into the game; anything else opens the editor.
     const start = () => {
         if (App.ed || App.unsupported || App.playing) return;
         const shared = GK.Share.parse(location.hash);

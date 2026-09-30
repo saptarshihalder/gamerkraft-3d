@@ -1,12 +1,6 @@
 GK.module('render/pathtracer', { runtime: false }, function (GK) {
     'use strict';
 
-    // GamerKraft Path Tracer: a progressive, physically based renderer written directly against
-    // WebGL2 (it does not use three.js). Voxels are traversed with a two-level DDA over a 3D
-    // texture, actor meshes with a two-level BVH, and every pixel is a running average of
-    // independent path samples so it converges to a noise-free image. Scene data comes from
-    // GK.RTScene and the tracing GLSL from GK.RTGLSL, which the real-time ray tracer shares.
-
     const RT = GK.RTScene;
 
     const TRACE = () => GK.RTGLSL.library() + `
@@ -22,9 +16,6 @@ vec3 clampLum(vec3 c) {
     return (uClamp > 0.0 && m > uClamp) ? c * (uClamp / m) : c;
 }
 
-// ---- light selection ----------------------------------------------------------------------
-// Resampled importance sampling: candidates are weighted by power x range falloff x cosine and one
-// is picked in proportion to its weight. W is the matching unbiased contribution weight.
 float lightWeight(int i, vec3 p, vec3 n) {
     vec4 l0 = fetchT(uLights, i * 2), l1 = fetchT(uLights, i * 2 + 1);
     float r = abs(l1.w);
@@ -51,7 +42,6 @@ int pickLight(vec3 p, vec3 n, out float W) {
     return sel;
 }
 
-// ---- camera -------------------------------------------------------------------------------
 void cameraRay(vec2 px, out vec3 ro, out vec3 rd) {
     vec2 uv = (px + vec2(rnd(), rnd())) / uRes * 2.0 - 1.0;
     if (uOrtho == 1) {
@@ -131,8 +121,6 @@ void main() {
                 float rs = (n1 * ci - n2 * ct) / (n1 * ci + n2 * ct), rp = (n1 * ct - n2 * ci) / (n1 * ct + n2 * ci);
                 F = 0.5 * (rs * rs + rp * rp);
             }
-            // First interface: pick reflection with a balanced probability (unbiased via the weight)
-            // so sky reflections on water and glass converge quickly; later ones follow Fresnel.
             float pr = (events == 0 && F < 0.999) ? clamp(F, 0.3, 0.7) : F;
             bool refl = rnd() < pr;
             if (events == 0 && F < 0.999) T *= refl ? F / pr : (1.0 - F) / (1.0 - pr);
@@ -155,9 +143,6 @@ void main() {
         vec3 wo = -rd;
         vec3 gn = h.n;
         vec3 sp = p + gn * 1e-3;
-        // Smooth surfaces get direct light on their diffuse lobe only; their mirror lobe sees the
-        // sun disk and emitters through sampled rays instead. Glossy surfaces seen through a diffuse
-        // bounce are roughened (path regularization) so tiny caustics do not turn into fireflies.
         if (diffuse) s.rough = max(s.rough, 0.35);
         bool mirror = s.rough < 0.2;
         if (!(mirror && s.metal > 0.95)) {
@@ -181,7 +166,6 @@ void main() {
                     vec3 lp;
                     float fall;
                     if (l1.w < 0.0) {
-                        // Cube emitter: pick one of the faces turned towards p by projected area.
                         vec3 dc = sp - (l0.xyz + 0.5);
                         vec3 ad = abs(dc) + 1e-4;
                         float u = rnd() * (ad.x + ad.y + ad.z);
@@ -234,8 +218,6 @@ void main() {
     oAlbedo = vec4(gAlb, 1.0);
     oNormal = vec4(gNrm, min(gDepth, 6e4));
 }`;
-    // Edge-avoiding a-trous wavelet filter on demodulated irradiance (colour / albedo), guided by
-    // normals, depth and albedo so geometry and texture edges stay sharp.
     const DENOISE = `#version 300 es
 precision highp float;
 uniform sampler2D uSrc;
@@ -506,7 +488,6 @@ void main() {
 
         get tilesPerPass() { return Math.ceil(this.width / this.tileSize) * Math.ceil(this.height / this.tileSize); }
 
-        // True while the GPU is still working through previously submitted tiles.
         busy() {
             if (!this._fence) return false;
             const gl = this.gl;
@@ -523,7 +504,6 @@ void main() {
             gl.uniform1f(u('uClamp'), o.clamp);
         }
 
-        // Traces up to maxTiles tiles of the current pass. Each completed pass adds one sample per pixel.
         render(maxTiles) {
             if (this.lost || !this.camera || !this.env || !this.ready) return 0;
             const gl = this.gl, prog = this.progs.trace;
@@ -558,7 +538,6 @@ void main() {
             return n;
         }
 
-        // Denoises (optionally) and tone maps the current estimate onto the canvas.
         present() {
             if (this.lost || !this.ready) return;
             const gl = this.gl;

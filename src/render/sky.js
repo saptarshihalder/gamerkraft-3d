@@ -101,11 +101,9 @@ varying vec3 vDir;
 void main() {
     vDir = position;
     vec4 p = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-    gl_Position = vec4(p.xy, p.w * 0.99999, p.w);   // pin to the far plane
+    gl_Position = vec4(p.xy, p.w * 0.99999, p.w);
 }`;
 
-    // Sky radiance for a view direction; sunDisk scales the solar disk so the path tracer can leave
-    // it out of rays whose sunlight is already sampled directly.
     const SKY_GLSL = `
 uniform vec3 uZenith;
 uniform vec3 uHorizon;

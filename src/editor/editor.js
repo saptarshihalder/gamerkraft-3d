@@ -672,8 +672,6 @@ GK.module('editor/editor', { runtime: false }, function (GK) {
             if (this._gizmoDrag) { this._gizmoDrag = false; this.gizmo.end(); this.mouse.left = false; return; }
             if (this.mouse.left) { this.mouse.left = false; GK.Editor.Tools.up(this, e); }
         }
-        // Touch: one finger uses the current tool (held back until it moves or lifts, so a pinch
-        // never places blocks), two fingers orbit around what is at the centre and pinch zooms.
         _touchDown(e) {
             if (this.pie) return;
             const t = this._touch || (this._touch = { pts: new Map(), pending: null, gesture: null, active: false });
@@ -740,7 +738,6 @@ GK.module('editor/editor', { runtime: false }, function (GK) {
             const cx = (pts[0].x + pts[1].x) / 2, cy = (pts[0].y + pts[1].y) / 2;
             return { cx, cy, dist: Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y) };
         }
-        // A touch replayed as a left-button mouse event for the tools.
         _touchEvent(e, x, y) {
             return { clientX: x, clientY: y, button: 0, buttons: 1, shiftKey: false, altKey: false, ctrlKey: false, metaKey: false, target: this.engine.renderer.domElement, pointerType: 'touch', preventDefault() {} };
         }
@@ -821,8 +818,6 @@ GK.module('editor/editor', { runtime: false }, function (GK) {
             this.emit('view');
         }
 
-        // Real-time ray tracing on the engine; falls back to Lit with a message when unsupported or
-        // when the GPU drops it.
         enableRayTracing(opts) {
             const r = this.engine.setRayTracing(opts);
             if (!r.ok) {

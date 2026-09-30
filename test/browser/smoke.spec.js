@@ -420,7 +420,6 @@ test("a share link plays the game in a sandbox and remixes into the editor", asy
   );
   await expect(broken.locator(".gk-play-msg")).toContainText("damaged");
 
-  // Like a person who got the link: one editor tab, not four busy ones on a software GPU.
   await Promise.all([player.close(), broken.close(), page.close()]);
   const remix = await context.newPage();
   const remixErrors = [];

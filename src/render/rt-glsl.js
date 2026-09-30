@@ -1,10 +1,6 @@
 GK.module('render/rt-glsl', function (GK) {
     'use strict';
 
-    // GLSL shared by the path tracer (render/pathtracer) and the real-time ray tracer
-    // (render/raytracer): scene uniforms, sampling, voxel DDA with see-through media, the
-    // two-level mesh BVH, block/actor surfaces and a Lambert + GGX BSDF.
-
     const RT = GK.RTScene;
     const G = GK.RTGLSL = {};
 
@@ -14,7 +10,6 @@ void main() {
     gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
 }`;
 
-    // Header, scene/camera/environment uniforms, sky and procedural block surfaces.
     G.prelude = () => `#version 300 es
 precision highp float;
 precision highp int;
@@ -77,7 +72,6 @@ ${GK.VoxelMaterial.SURFACE_GLSL}
 `;
 
     G.SAMPLING = () => `
-// ---- sampling -----------------------------------------------------------------------------
 uint gRng;
 uint pcg(uint v) {
     uint s = v * 747796405u + 2891336453u;
@@ -107,7 +101,6 @@ vec3 safeDir(vec3 d) {
 }
 `;
     G.VOXELS = () => `
-// ---- voxels -------------------------------------------------------------------------------
 struct Hit { float t; vec3 n; vec3 outward; int type; uint id; uint next; int tri; vec2 bc; int inst; };
 
 vec4 blockRow(uint id, int row) { return texelFetch(uBlocks, ivec2(int(id), row), 0); }
@@ -145,8 +138,6 @@ uint mediumAt(vec3 p) {
     return id;
 }
 
-// Closest interaction with the voxel grid for a ray travelling inside medium (0 = air). In shadow
-// mode it instead accumulates transmittance through see-through blocks and stops at opaque ones.
 bool traceVoxels(vec3 ro, vec3 rd, float tMax, uint medium, bool shadow, inout vec3 trans, inout Hit h) {
     vec3 o = ro - vec3(uVoxMin);
     vec3 inv = 1.0 / rd;
@@ -265,7 +256,6 @@ bool traceVoxels(vec3 ro, vec3 rd, float tMax, uint medium, bool shadow, inout v
 
 `;
     G.MESHES = () => `
-// ---- actor meshes: TLAS over instances, each pointing at a BLAS in its local space ----------
 vec4 fetchT(sampler2D s, int i) { return texelFetch(s, ivec2(i % TEXW, i / TEXW), 0); }
 float nodeHit(vec4 a, vec4 b, vec3 ro, vec3 inv, float tMax) {
     vec3 t0 = (a.xyz - ro) * inv, t1 = (b.xyz - ro) * inv;
@@ -276,13 +266,10 @@ float nodeHit(vec4 a, vec4 b, vec3 ro, vec3 inv, float tMax) {
 }
 float blasDist(int ni, vec3 ro, vec3 inv, float tMax) { return nodeHit(fetchT(uNodes, ni * 2), fetchT(uNodes, ni * 2 + 1), ro, inv, tMax); }
 float tlasDist(int ni, vec3 ro, vec3 inv, float tMax) { return nodeHit(fetchT(uTlas, ni * 2), fetchT(uTlas, ni * 2 + 1), ro, inv, tMax); }
-// World-space normal of a local-space vector: transpose(inverse(M)) * n.
 vec3 instNormal(int inst, vec3 n) {
     return normalize(n.x * fetchT(uInst, inst * 4).xyz + n.y * fetchT(uInst, inst * 4 + 1).xyz + n.z * fetchT(uInst, inst * 4 + 2).xyz);
 }
 
-// Closest (or, for shadows, any blocking) hit inside one instance's BLAS. ro/rd are local and rd is
-// not normalized, so t matches the world-space ray parameter.
 bool traceBLAS(vec3 ro, vec3 rd, int inst, int nodeBase, int triBase, int mat, bool shadow, inout float best, inout Hit h) {
     vec3 inv = 1.0 / rd;
     int stackN[32];
@@ -409,7 +396,6 @@ vec3 shadowTrans(vec3 ro, vec3 rd, float tMax) {
 
 `;
     G.MATERIALS = () => `
-// ---- materials ----------------------------------------------------------------------------
 struct Surf { vec3 albedo; float rough; float metal; vec3 emis; float alpha; vec3 n; int kind; };
 
 float hash3i(ivec3 c) { uvec3 u = uvec3(c + 32768); return float(pcg(u.x * 73856093u ^ u.y * 19349663u ^ u.z * 83492791u) >> 8) * (1.0 / 16777216.0); }
@@ -455,7 +441,6 @@ Surf triSurf(Hit h) {
 
 `;
     G.BSDF = () => `
-// ---- BSDF: Lambert diffuse + GGX specular (VNDF sampling) ---------------------------------
 float lum(vec3 c) { return dot(c, vec3(0.2126, 0.7152, 0.0722)); }
 vec3 fresnel(float c, vec3 f0) { return f0 + (1.0 - f0) * pow(1.0 - clamp(c, 0.0, 1.0), 5.0); }
 float ggxD(float nh, float a) { float a2 = a * a; float d = nh * nh * (a2 - 1.0) + 1.0; return a2 / (PI * d * d); }
@@ -516,10 +501,8 @@ bool sampleBSDF(Surf s, vec3 wo, out vec3 wi, out vec3 weight, out bool specLobe
 
 `;
 
-    // Everything above, in dependency order.
     G.library = () => G.prelude() + G.SAMPLING() + G.VOXELS() + G.MESHES() + G.MATERIALS() + G.BSDF();
 
-    // Texture units and uniforms shared by both tracers. `scene` holds the GPU textures and counts.
     G.bindScene = function (gl, uniform, tex, scene) {
         const units = [['uVox', 'vox', gl.TEXTURE_3D], ['uBricks', 'bricks', gl.TEXTURE_3D], ['uBlocks', 'blocks'], ['uTris', 'tris'], ['uNormals', 'normals'],
             ['uNodes', 'nodes'], ['uMats', 'mats'], ['uInst', 'inst'], ['uTlas', 'tlas'], ['uLights', 'lights']];
@@ -550,7 +533,6 @@ bool sampleBSDF(Surf s, vec3 wo, out vec3 wi, out vec3 weight, out bool specLobe
         gl.uniform2f(uniform('uRes'), width, height);
     };
 
-    // Sky, sun and fog from an RTScene.environment() description.
     G.bindEnvironment = function (gl, uniform, e, opts) {
         gl.uniform1f(uniform('uEmissive'), opts.emissive);
         gl.uniform1f(uniform('uSkyLight'), opts.skyLight * e.skyLight);
