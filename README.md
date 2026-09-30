@@ -6,9 +6,42 @@ with the real-time **ray tracer** (in the editor and in your published games), r
 photoreal stills and videos with the **path tracer**, and package a **single offline HTML
 file** that runs on desktop and mobile.
 
-No build step, no server: open `index.html`. GamerKraft is **free and open source** under the
-[MIT License](LICENSE). There is no account, subscription, watermark or royalty, and every
-renderer runs on your own GPU.
+GamerKraft is **free and open source** under the [MIT License](LICENSE). There is no account,
+subscription, watermark or royalty, and every renderer runs on your own device.
+
+## Use it online
+
+Open **https://saptarshihalder.github.io/gamerkraft-3d/** in Chrome, Edge, Firefox or Safari
+on a computer or tablet. Nothing to download or install, and no sign-up.
+
+- **Make**: pick a template in the Project Browser and edit. Projects save automatically in
+  your browser (IndexedDB), so they are there next time you open the site on that device.
+  Use File ▸ Export Project File to move a project to another device.
+- **Share**: press **Share** in the toolbar. You get two links:
+  - a **Play link** that opens straight into the game, full screen, on any device;
+  - a **Remix link** that opens an editable copy in the other person's editor.
+- **Play**: anyone who opens a Play link just plays. They need no account or download either.
+
+How links work: the whole game is compressed into the part of the link after `#`. Browsers
+never send that part to the web server, so there is no upload, no game hosting and nothing to
+keep running. A typical level makes a link of a few kilobytes.
+
+- Some chat apps cut messages longer than about 8,000 characters. The Share dialog warns you
+  when a link is that long; email and notes apps keep long links intact.
+- Very large worlds (links over 1.5 MB) can't be shared as a link. Use **Package Project** and
+  send the file instead.
+- A Play link runs the game in a sandboxed frame, so a Level Script from someone else cannot
+  read your saved projects. Remix links ask whether to keep someone else's Level Script
+  before it can run.
+
+On a tablet, tap to use the current tool, drag with two fingers to orbit and pinch to zoom.
+Phones can play games (with on-screen controls) but are too small for comfortable editing.
+If a device or browser can't show 3D, the site says so and explains how to fix it (usually
+by turning on hardware acceleration) instead of showing a blank page.
+
+To run it from your own copy instead, open `index.html`, or use the single-file
+`GamerKraft_Editor.html` from `npm run build`. Both work offline. Share links need the page
+to be served over http(s), and point to the public site when made from a local file.
 
 ## Editor
 
@@ -23,7 +56,9 @@ Status bar has a console (`help`).
 - **Build tools** — brush (cube/sphere, size 1–9, plane-locked strokes), box (solid / hollow / walls, add / remove / replace), erase, paint, flood fill, eyedropper
 - **Landscape** — raise, lower, flatten, smooth, paint; fBm terrain generator with 5 biomes (temperate, desert, snow, tropical island, volcanic)
 - **Undo/redo** — transactional history for blocks, actors, settings, script and map size (100 steps)
-- **Project Browser** — 8 templates with live-rendered thumbnails; multiple projects saved in the browser with autosave
+- **Project Browser** — 8 templates with live-rendered thumbnails; multiple projects saved in the browser (IndexedDB) with autosave
+- **Share Game Link** — Play and Remix links that carry the whole game, no server needed (see [Use it online](#use-it-online))
+- **Touch** — tap, two-finger orbit and pinch zoom for editing on tablets
 - **Play In Editor** — play-test in the viewport; the level is restored exactly on stop. *Play From Here* via right-click
 - **Map Check**, copy/paste, duplicate, snap-to-floor, top orthographic view, lit/unlit/wireframe/ray traced/path traced view modes, guided tour
 
@@ -144,7 +179,8 @@ src/render/           voxel shader, mesher, sky, engine (renderer, world view, p
                       render-output (resolutions, animation paths, ZIP and WebM writers)
 src/runtime/          input/audio/physics, HUD, game session + scripting, standalone player
 src/editor/           UI kit, editor core (history, gizmo, tools, PIE), panels, templates,
-                      render-studio (Path Traced viewport, Render window), app
+                      render-studio (Path Traced viewport, Render window),
+                      share (game links, sandboxed play page), app
 vendor/               three.js r128 (wrapped for the registry), lucide icons (editor only)
 ```
 
@@ -179,11 +215,16 @@ Contribution workflow and history: [CONTRIBUTING.md](CONTRIBUTING.md), [CHANGELO
 
 Pushes to `main` run the quality gate, then deploy `dist/browser` to GitHub Pages
 (`.github/workflows/pages.yml`). The deployed `index.html` is the single-file editor, so the
-page and engine always update atomically.
+page and engine always update atomically. The same page serves share links: `#play=…` opens
+the player and `#edit=…` opens a remix. If you host a fork elsewhere, change the
+`gk-public-url` meta tag in `index.html` so links made from a local file point to your site.
 
 ## Save format
 
 Projects are JSON (`.gkproj`): `{ format, version: 3, meta, world: { size, height, chunks }, actors, settings, script }`.
+A share link holds the same JSON without `meta.id` and the timestamps: `#play=` or `#edit=`,
+then `z` + base64url(deflate-raw(JSON)), or `j` + base64url(JSON) in browsers without
+`CompressionStream`.
 `settings.render` holds the render settings; older projects get the defaults.
 Chunks are run-length encoded, base64 16³ voxel arrays. Levels from GamerKraft v1/v2 are
 imported and migrated automatically (File ▸ Import, or the v2 browser autosave on first launch).
