@@ -592,9 +592,10 @@ GK.module('editor/editor', { runtime: false }, function (GK) {
         _bindViewport() {
             const el = this.engine.renderer.domElement;
             el.addEventListener('contextmenu', e => e.preventDefault());
-            el.addEventListener('pointerdown', e => this._down(e));
-            window.addEventListener('pointermove', e => this._move(e));
-            window.addEventListener('pointerup', e => this._up(e));
+            el.addEventListener('pointerdown', e => { if (e.pointerType === 'touch') this._touchDown(e); else this._down(e); });
+            window.addEventListener('pointermove', e => { if (e.pointerType === 'touch') this._touchMove(e); else this._move(e); });
+            window.addEventListener('pointerup', e => { if (e.pointerType === 'touch') this._touchUp(e); else this._up(e); });
+            window.addEventListener('pointercancel', e => { if (e.pointerType === 'touch') this._touchUp(e, true); });
             el.addEventListener('wheel', e => this._wheel(e), { passive: false });
             el.addEventListener('dblclick', e => {
                 if (this.pie || this.mode !== 'select') return;
@@ -671,6 +672,79 @@ GK.module('editor/editor', { runtime: false }, function (GK) {
             if (this._gizmoDrag) { this._gizmoDrag = false; this.gizmo.end(); this.mouse.left = false; return; }
             if (this.mouse.left) { this.mouse.left = false; GK.Editor.Tools.up(this, e); }
         }
+        // Touch: one finger uses the current tool (held back until it moves or lifts, so a pinch
+        // never places blocks), two fingers orbit around what is at the centre and pinch zooms.
+        _touchDown(e) {
+            if (this.pie) return;
+            const t = this._touch || (this._touch = { pts: new Map(), pending: null, gesture: null, active: false });
+            t.pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+            if (t.pts.size === 1 && !t.gesture) { t.pending = { e, x: e.clientX, y: e.clientY }; return; }
+            t.pending = null;
+            if (t.active) { t.active = false; this._up(this._touchEvent(e, e.clientX, e.clientY)); }
+            if (t.pts.size >= 2) {
+                const r = this.engine.renderer.domElement.getBoundingClientRect();
+                const hit = this.view === 'persp' ? this.pick(r.left + r.width / 2, r.top + r.height / 2) : null;
+                t.gesture = { pivot: hit ? hit.point.clone() : this.cam.pos.clone().addScaledVector(this.forward(), 12), ...this._touchShape(t) };
+            }
+        }
+        _touchMove(e) {
+            const t = this._touch;
+            if (!t || !t.pts.has(e.pointerId) || this.pie) return;
+            t.pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+            if (t.gesture && t.pts.size >= 2) {
+                const now = this._touchShape(t), g = t.gesture;
+                const dx = now.cx - g.cx, dy = now.cy - g.cy, zoom = g.dist > 0 ? now.dist / g.dist : 1;
+                if (this.view === 'top') {
+                    this._pan(dx, dy);
+                    this.ortho.zoom = U.clamp(this.ortho.zoom * zoom, 0.5, 120);
+                    this._applyCamera();
+                } else {
+                    const off = this.cam.pos.clone().sub(g.pivot);
+                    const sph = new THREE.Spherical().setFromVector3(off);
+                    sph.theta -= dx * 0.006;
+                    sph.phi = U.clamp(sph.phi - dy * 0.006, 0.05, Math.PI - 0.05);
+                    sph.radius = U.clamp(sph.radius / zoom, 1.5, 800);
+                    this.cam.pos.copy(g.pivot).add(new V3().setFromSpherical(sph));
+                    const f = g.pivot.clone().sub(this.cam.pos).normalize();
+                    this.cam.yaw = Math.atan2(-f.x, -f.z);
+                    this.cam.pitch = Math.asin(U.clamp(f.y, -1, 1));
+                    this._applyCamera();
+                }
+                Object.assign(g, now);
+                return;
+            }
+            if (t.pending && Math.hypot(e.clientX - t.pending.x, e.clientY - t.pending.y) > 8) {
+                const p = t.pending;
+                t.pending = null;
+                t.active = true;
+                this._down(this._touchEvent(p.e, p.x, p.y));
+            }
+            if (t.active) this._move(this._touchEvent(e, e.clientX, e.clientY));
+        }
+        _touchUp(e, cancelled) {
+            const t = this._touch;
+            if (!t || !t.pts.has(e.pointerId)) return;
+            t.pts.delete(e.pointerId);
+            if (t.pending && !cancelled && !this.pie) {
+                const p = t.pending;
+                this._down(this._touchEvent(p.e, p.x, p.y));
+                this._up(this._touchEvent(e, p.x, p.y));
+            } else if (t.active) this._up(this._touchEvent(e, e.clientX, e.clientY));
+            t.pending = null;
+            t.active = false;
+            if (t.pts.size < 2) t.gesture = null;
+            if (t.gesture) Object.assign(t.gesture, this._touchShape(t));
+        }
+        _touchShape(t) {
+            const pts = Array.from(t.pts.values()).slice(0, 2);
+            const cx = (pts[0].x + pts[1].x) / 2, cy = (pts[0].y + pts[1].y) / 2;
+            return { cx, cy, dist: Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y) };
+        }
+        // A touch replayed as a left-button mouse event for the tools.
+        _touchEvent(e, x, y) {
+            return { clientX: x, clientY: y, button: 0, buttons: 1, shiftKey: false, altKey: false, ctrlKey: false, metaKey: false, target: this.engine.renderer.domElement, pointerType: 'touch', preventDefault() {} };
+        }
+
         _wheel(e) {
             if (this.pie) return;
             e.preventDefault();

@@ -151,11 +151,12 @@ test("terrain generation is deterministic and playable", async ({ page }) => {
 
 test("saved projects reopen after a reload", async ({ page }) => {
   await openEditor(page);
-  await page.evaluate(() => {
-    window.GK.App.newProject("blank", "Smoke Save");
+  const saved = await page.evaluate(async () => {
+    await window.GK.App.newProject("blank", "Smoke Save");
     window.GK.editor.history.voxel(3, 5, 3, 36);
-    window.GK.App.save(true);
+    return window.GK.App.save(true);
   });
+  expect(saved).toBe(true);
   await page.reload();
   await expect
     .poll(() =>
@@ -353,5 +354,110 @@ test("the real-time ray tracer runs in the editor, in Play In Editor and in pack
   await game.click(".gk-screen [data-k=rt]");
   expect(await game.evaluate(() => window.GK.runtime.engine.rt)).toBeNull();
   expect(gameErrors).toEqual([]);
+  expect(errors).toEqual([]);
+});
+
+test("a share link plays the game in a sandbox and remixes into the editor", async ({
+  page,
+  context,
+}) => {
+  test.setTimeout(300_000);
+  await openEditor(page);
+  const links = await page.evaluate(async () => {
+    await window.GK.App.newProject("coinrush", "Link Smoke");
+    window.GK.editor.world.meta.author = "Smoke";
+    window.GK.editor.world.script = "on('coin', () => hud.message('coin', 1));";
+    return window.GK.Share.links(window.GK.editor.world.toJSON());
+  });
+  expect(links.play).toMatch(/#play=z[A-Za-z0-9_-]+$/);
+  expect(links.edit).toMatch(/#edit=z[A-Za-z0-9_-]+$/);
+
+  const player = await context.newPage();
+  const playErrors = [];
+  player.on("pageerror", (e) => playErrors.push(String(e)));
+  await player.goto(links.play);
+  await expect(player.locator(".gk-play-title")).toContainText("Link Smoke");
+  await expect(player.locator("#app")).toHaveCount(0);
+  await expect(player.locator(".gk-play-frame")).toHaveAttribute(
+    "sandbox",
+    "allow-scripts allow-pointer-lock",
+  );
+  const game = player.frameLocator(".gk-play-frame");
+  await game.locator(".gk-screen .gk-btn.primary").click({ timeout: 60_000 });
+  const frame = player.frames().find((f) => f !== player.mainFrame());
+  await expect
+    .poll(() => frame.evaluate(() => window.GK.runtime.game.state), {
+      timeout: 30_000,
+    })
+    .toBe("playing");
+  const sandbox = await frame.evaluate(() => {
+    let storage = "open";
+    try {
+      window.localStorage.getItem("x");
+    } catch (e) {
+      storage = "blocked";
+    }
+    let parent = "open";
+    try {
+      void window.parent.document;
+    } catch (e) {
+      parent = "blocked";
+    }
+    return { storage, parent, voxels: window.GK.runtime.world.countVoxels() };
+  });
+  expect(sandbox).toEqual({
+    storage: "blocked",
+    parent: "blocked",
+    voxels: expect.any(Number),
+  });
+  expect(sandbox.voxels).toBeGreaterThan(0);
+  expect(playErrors).toEqual([]);
+
+  const broken = await context.newPage();
+  const cut = links.play.indexOf("#play=") + 6;
+  await broken.goto(
+    links.play.slice(0, cut + Math.floor((links.play.length - cut) * 0.7)),
+  );
+  await expect(broken.locator(".gk-play-msg")).toContainText("damaged");
+
+  // Like a person who got the link: one editor tab, not four busy ones on a software GPU.
+  await Promise.all([player.close(), broken.close(), page.close()]);
+  const remix = await context.newPage();
+  const remixErrors = [];
+  remix.on("pageerror", (e) => remixErrors.push(String(e)));
+  await remix.goto(links.edit);
+  await expect(
+    remix.locator(".modal", { hasText: "Shared Level Script" }),
+  ).toBeVisible({
+    timeout: 60_000,
+  });
+  await remix.getByRole("button", { name: "Remove Script" }).click();
+  await expect
+    .poll(
+      () =>
+        remix.evaluate(() => {
+          const ed = window.GK && window.GK.editor;
+          return ed && [ed.world.meta.name, ed.world.script, location.hash];
+        }),
+      { timeout: 30_000 },
+    )
+    .toEqual(["Link Smoke (Remix)", "", ""]);
+  expect(remixErrors).toEqual([]);
+});
+
+test("devices without 3D graphics get a friendly screen instead of a blank page", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const original = HTMLCanvasElement.prototype.getContext;
+    HTMLCanvasElement.prototype.getContext = function (type, ...rest) {
+      return /webgl/.test(type) ? null : original.call(this, type, ...rest);
+    };
+  });
+  const errors = [];
+  page.on("pageerror", (e) => errors.push(String(e)));
+  await page.goto("/");
+  await expect(page.locator(".gk-no3d")).toContainText("can't show 3D");
+  await expect(page.locator("#app")).toHaveCount(0);
   expect(errors).toEqual([]);
 });

@@ -13,7 +13,14 @@ GK.module('runtime/player', function (GK) {
             document.body.appendChild(root);
 
             const world = GK.World.fromJSON(project);
-            const engine = new GK.Engine(root, { shadowQuality: opts.quality || 'medium' });
+            let engine;
+            try {
+                if (!GK.Engine.webglSupport().ok) throw new Error('WebGL unavailable');
+                engine = new GK.Engine(root, { shadowQuality: opts.quality || 'medium' });
+            } catch (e) {
+                GK.Engine.showUnsupported(root, 'game');
+                return;
+            }
             engine.setWorld(world);
             engine.worldView.setEditorVisuals(false);
             engine.worldView.flush();

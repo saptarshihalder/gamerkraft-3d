@@ -446,6 +446,35 @@ GK.module('render/engine', function (GK) {
         }
     }
 
+    // Whether this browser can create a WebGL context at all.
+    Engine.webglSupport = function () {
+        try {
+            const c = document.createElement('canvas');
+            const gl = c.getContext('webgl2') || c.getContext('webgl');
+            if (!gl) return { ok: false };
+            const lose = gl.getExtension('WEBGL_lose_context');
+            if (lose) lose.loseContext();
+            return { ok: true };
+        } catch (e) { return { ok: false }; }
+    };
+
+    // Explains what to do instead of leaving a blank page when WebGL is unavailable.
+    Engine.showUnsupported = function (container, what) {
+        const box = document.createElement('div');
+        box.className = 'gk-no3d';
+        box.style.cssText = 'position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:24px;background:#101216;color:#e8eaed;font:15px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;overflow:auto;z-index:10';
+        const who = what === 'editor' ? 'GamerKraft' : 'This game';
+        box.innerHTML = '<div style="max-width:560px"><h2 style="margin:0 0 10px;font-size:24px">This device can\'t show 3D right now</h2>' +
+            '<p style="margin:0 0 12px;opacity:.85">' + who + ' draws with WebGL, the 3D graphics built into every modern browser. It is usually just switched off:</p>' +
+            '<ul style="margin:0 0 12px;padding-left:20px">' +
+            '<li><b>Turn on hardware acceleration.</b> Chrome and Edge: Settings &rsaquo; System &rsaquo; <i>Use graphics acceleration when available</i>, then restart the browser. Firefox: Settings &rsaquo; General &rsaquo; Performance.</li>' +
+            '<li><b>Update your browser</b>, or try Chrome, Edge, Firefox or Safari.</li>' +
+            '<li><b>Try another device.</b> Almost any phone, tablet or computer from the last ten years works; no special graphics card is needed.</li></ul>' +
+            '<p style="margin:0;opacity:.6;font-size:13px">Nothing needs to be installed. Reload this page after changing a setting.</p></div>';
+        container.appendChild(box);
+        return box;
+    };
+
     GK.Engine = Engine;
     GK.WorldView = WorldView;
     GK.Particles = Particles;
