@@ -2,7 +2,8 @@
 
 A browser-native 3D game engine and level editor with an Unreal Engine–style workflow.
 Build levels from voxels and actors, script gameplay, play-test in the viewport,
-and package a **single offline HTML file** that runs on desktop and mobile.
+render photoreal stills and videos with the built-in **path tracer**, and package a
+**single offline HTML file** that runs on desktop and mobile.
 
 No build step, no server: open `index.html`.
 
@@ -35,6 +36,41 @@ Blank · Third Person Platformer · First Person Arena · Parkour Tower (Obby) �
 - **Audio** — procedural sound effects and 4 generative music tracks (WebAudio, no assets)
 - **HUD** — health, lives, score, coins, timer, objective, keys, jetpack fuel, minimap, pause menu with settings, victory/defeat screens with best times
 
+## Rendering
+
+GamerKraft includes its own path tracer, written directly against WebGL2 (it does not use
+three.js). Rendering runs entirely on your GPU in the browser: it is free, needs no account or
+render farm, and nothing is uploaded.
+
+- **Path Traced viewport**: choose *Path Traced* in the viewport's view-mode menu (next to
+  *Perspective*), the **Render** toolbar menu, or `r.pathtrace 1`. The view refines while you
+  look around and restarts when you edit blocks, actors or the sky.
+- **Render Image** (`Alt+R`): renders the current viewport camera at up to 8K. Resolution presets
+  run from 720p to 4K plus square and vertical, and you set the sample count. The finished image
+  saves as PNG or copies to the clipboard.
+- **Render Animation**: a turntable orbit around what the viewport is looking at, or a time-lapse
+  of the day cycle. Output is WebM video (WebCodecs VP9/VP8 with exact frame timing; MediaRecorder
+  fallback), a ZIP of PNG frames, or both.
+
+What it simulates: global illumination with multiple bounces, soft sun shadows (adjustable sun
+size), GGX glossy and metallic reflections, glass/water/slime refraction with Fresnel and
+absorption, light scattering in water, torches and point lights, glowing blocks as area lights,
+depth of field with autofocus, the level's sky, clouds, stars and fog. Frames are progressively
+accumulated and cleaned by an edge-aware denoiser guided by normals, depth and albedo. ACES,
+Reinhard or linear tone mapping.
+
+How it works (`src/render/rt-scene.js`, `src/render/pathtracer.js`):
+
+- Voxels are uploaded as a 3D texture and traversed with a two-level DDA that skips empty
+  4³ bricks. Actor meshes, including instanced foliage, are flattened into a binned-SAH BVH.
+- Block surfaces use the same procedural GLSL as the raster renderer, so both match.
+- Every pixel keeps a running average of independent samples in float render targets. Work is
+  split into tiles and throttled with GPU fences so the editor stays responsive.
+
+Render settings (samples, bounces, camera, lighting, color, animation) are saved with the project.
+The path tracer needs WebGL2 with `EXT_color_buffer_float`, which current desktop and mobile
+browsers support. Packaged games do not include it.
+
 ## Level scripting
 
 Each level has a JavaScript Level Script that runs when play starts:
@@ -63,9 +99,12 @@ index.html            editor shell
 css/editor.css        UE5-style dark theme
 src/boot.js           module registry + bundler
 src/core/             util, blocks, world (chunks, raycast, serialization), actors
-src/render/           voxel shader, mesher, sky, engine (renderer, world view, particles)
+src/render/           voxel shader, mesher, sky, engine (renderer, world view, particles),
+                      path tracer: rt-scene (scene packing, BVH), pathtracer (WebGL2),
+                      render-output (resolutions, animation paths, ZIP and WebM writers)
 src/runtime/          input/audio/physics, HUD, game session + scripting, standalone player
-src/editor/           UI kit, editor core (history, gizmo, tools, PIE), panels, templates, app
+src/editor/           UI kit, editor core (history, gizmo, tools, PIE), panels, templates,
+                      render-studio (Path Traced viewport, Render window), app
 vendor/               three.js r128 (wrapped for the registry), lucide icons (editor only)
 ```
 
@@ -105,5 +144,6 @@ page and engine always update atomically.
 ## Save format
 
 Projects are JSON (`.gkproj`): `{ format, version: 3, meta, world: { size, height, chunks }, actors, settings, script }`.
+`settings.render` holds the render settings; older projects get the defaults.
 Chunks are run-length encoded, base64 16³ voxel arrays. Levels from GamerKraft v1/v2 are
 imported and migrated automatically (File ▸ Import, or the v2 browser autosave on first launch).

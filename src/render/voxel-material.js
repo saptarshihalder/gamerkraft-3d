@@ -9,14 +9,9 @@ GK.module('render/voxel-material', function (GK) {
         uGrassRatio: { value: new THREE.Vector3(1, 1, 1) }
     };
 
-    const FRAG_PARS = `
-uniform float uTime;
-uniform float uUnlit;
-uniform vec3 uGrassRatio;
-varying float vMat;
-varying vec3 vGkPos;
-varying vec3 vGkNormal;
-
+    // Procedural block surfaces. Reads vMat, vGkPos, vGkNormal, uTime and uGrassRatio; the path
+    // tracer (render/pathtracer) reuses this source with those names declared as plain globals.
+    const SURFACE_GLSL = `
 float gkH2(vec2 p) {
     p = fract(p * vec2(123.34, 456.21));
     p += dot(p, p + 45.32);
@@ -219,6 +214,15 @@ void gkSurface(inout vec3 col, inout float alpha, inout float rough, inout float
 }
 `;
 
+    const FRAG_PARS = `
+uniform float uTime;
+uniform float uUnlit;
+uniform vec3 uGrassRatio;
+varying float vMat;
+varying vec3 vGkPos;
+varying vec3 vGkNormal;
+` + SURFACE_GLSL;
+
     const FRAG_SURFACE = `
     float gkRough = -1.0;
     float gkMetal = -1.0;
@@ -262,6 +266,8 @@ void gkSurface(inout vec3 col, inout float alpha, inout float rough, inout float
         const d = GK.Blocks.linearColor(GK.Blocks.byKey.grass.side[0]);
         VM.uniforms.uGrassRatio.value.set(g.r / d.r, g.g / d.g, g.b / d.b);
     })();
+
+    VM.SURFACE_GLSL = SURFACE_GLSL;
 
     VM.setWireframe = function (on) {
         VM.opaque.wireframe = on;
