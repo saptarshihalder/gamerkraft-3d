@@ -732,12 +732,15 @@ GK.module('editor/editor', { runtime: false }, function (GK) {
         }
 
         setViewMode(m) {
+            if (m === 'pathtraced' && !GK.RenderStudio.enableViewport(this)) return;
+            if (m !== 'pathtraced') GK.RenderStudio.disableViewport(this);
             this.viewMode = m;
+            const lit = m === 'lit' || m === 'pathtraced';
             GK.VoxelMaterial.setWireframe(m === 'wireframe');
             GK.Assets.setWireframe(m === 'wireframe');
             GK.VoxelMaterial.setUnlit(m === 'unlit');
-            this.engine.sun.visible = m === 'lit';
-            this.engine.hemi.intensity = m === 'lit' ? this.engine.env.hemiIntensity : 1.6;
+            this.engine.sun.visible = lit;
+            this.engine.hemi.intensity = lit ? this.engine.env.hemiIntensity : 1.6;
             this.emit('view');
         }
 
@@ -809,6 +812,7 @@ GK.module('editor/editor', { runtime: false }, function (GK) {
             this.gizmo.update(cam);
             if (this._selDirty !== this._selKey()) { this._selDirty = this._selKey(); this._updateSelectionBoxes(); }
             eng.update(dt, cam);
+            if (GK.RenderStudio.drawViewport(this, cam)) return;
             eng.render(cam);
         }
         _selKey() {
