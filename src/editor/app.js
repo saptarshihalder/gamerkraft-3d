@@ -5,23 +5,98 @@ GK.module('editor/app', { runtime: false }, function (GK) {
     const store = U.store;
     const K_INDEX = 'gk3.projects', K_PROJ = 'gk3.p.', K_LAST = 'gk3.last', K_PREFS = 'gk3.prefs';
 
+    // Projects are kept in IndexedDB (room for hundreds of MB), with localStorage as the fallback
+    // where IndexedDB is unavailable. The project list lives in memory so menus stay synchronous.
+    // Because IndexedDB writes are asynchronous, closing the tab also leaves a synchronous rescue
+    // copy in localStorage that the next visit folds back in.
+    const K_RESCUE = 'gk3.rescue';
+    const idb = {
+        open() {
+            return new Promise((resolve, reject) => {
+                if (typeof indexedDB === 'undefined') { reject(new Error('IndexedDB unavailable')); return; }
+                const r = indexedDB.open('gamerkraft', 1);
+                r.onupgradeneeded = () => { r.result.createObjectStore('projects'); r.result.createObjectStore('index'); };
+                r.onsuccess = () => resolve(r.result);
+                r.onerror = () => reject(r.error || new Error('IndexedDB failed to open'));
+                r.onblocked = () => reject(new Error('IndexedDB is blocked by another tab'));
+            });
+        },
+        run(db, mode, fn) {
+            return new Promise((resolve, reject) => {
+                const t = db.transaction(['projects', 'index'], mode);
+                const req = fn(t.objectStore('projects'), t.objectStore('index'));
+                t.oncomplete = () => resolve(req ? req.result : undefined);
+                t.onerror = () => reject(t.error);
+                t.onabort = () => reject(t.error || new Error('storage transaction aborted'));
+            });
+        }
+    };
     const Storage = {
-        list() { return store.get(K_INDEX, []).sort((a, b) => b.modified - a.modified); },
-        load(id) { return store.get(K_PROJ + id, null); },
-        save(data, thumb) {
+        db: null,
+        index: [],
+        get backend() { return this.db ? 'indexeddb' : 'localstorage'; },
+        async init() {
+            this.index = store.get(K_INDEX, []);
+            try { this.db = await idb.open(); }
+            catch (e) { this.db = null; this._rescue(); return; }
+            const known = await idb.run(this.db, 'readonly', (p, i) => i.getAll());
+            const ids = new Set(known.map(p => p.id));
+            // Move localStorage projects over one at a time. One that fails to move stays where it
+            // is and stays listed (load() falls back to it); the next visit tries again.
+            const kept = [];
+            for (const entry of this.index) {
+                if (ids.has(entry.id)) { store.remove(K_PROJ + entry.id); continue; }
+                const data = store.get(K_PROJ + entry.id, null);
+                if (!data) continue;
+                try {
+                    await idb.run(this.db, 'readwrite', (p, i) => { p.put(data, entry.id); i.put(entry, entry.id); });
+                    store.remove(K_PROJ + entry.id);
+                } catch (e) { kept.push(entry); }
+                known.push(entry);
+            }
+            if (kept.length) store.set(K_INDEX, kept);
+            else if (this.index.length) store.remove(K_INDEX);
+            this.index = known;
+            await this._rescue();
+        },
+        // Folds a tab-close rescue copy back in when it is newer than the stored project.
+        async _rescue() {
+            const r = store.get(K_RESCUE, null);
+            if (!r || !r.data || !r.data.meta) return;
+            const cur = this.index.find(p => p.id === r.data.meta.id);
+            if (!cur || (r.time || 0) > (cur.modified || 0)) await this.save(r.data, null, r.time);
+            store.remove(K_RESCUE);
+        },
+        rescue(data) { return store.set(K_RESCUE, { data, time: Date.now() }); },
+        list() { return this.index.slice().sort((a, b) => b.modified - a.modified); },
+        async load(id) {
+            if (!this.db) return store.get(K_PROJ + id, null);
+            return (await idb.run(this.db, 'readonly', p => p.get(id))) || store.get(K_PROJ + id, null);
+        },
+        async save(data, thumb, time) {
             const id = data.meta.id;
-            const ok = store.set(K_PROJ + id, data);
-            if (!ok) return false;
-            const idx = store.get(K_INDEX, []).filter(p => p.id !== id);
-            const prev = store.get(K_INDEX, []).find(p => p.id === id);
-            idx.push({ id, name: data.meta.name, template: data.meta.template, modified: Date.now(), thumb: thumb || (prev && prev.thumb) || '' });
-            if (!store.set(K_INDEX, idx)) { idx.forEach(p => { p.thumb = ''; }); store.set(K_INDEX, idx); }
+            const prev = this.index.find(p => p.id === id);
+            const entry = { id, name: data.meta.name, template: data.meta.template, modified: time || Date.now(), thumb: thumb || (prev && prev.thumb) || '' };
+            if (this.db) {
+                try { await idb.run(this.db, 'readwrite', (p, i) => { p.put(data, id); i.put(entry, id); }); }
+                catch (e) { return false; }
+            } else {
+                if (!store.set(K_PROJ + id, data)) return false;
+                const idx = this.index.filter(p => p.id !== id).concat([entry]);
+                if (!store.set(K_INDEX, idx)) { idx.forEach(p => { p.thumb = ''; }); store.set(K_INDEX, idx); }
+            }
+            this.index = this.index.filter(p => p.id !== id).concat([entry]);
             store.set(K_LAST, id);
             return true;
         },
-        remove(id) {
+        async remove(id) {
+            this.index = this.index.filter(p => p.id !== id);
             store.remove(K_PROJ + id);
-            store.set(K_INDEX, store.get(K_INDEX, []).filter(p => p.id !== id));
+            if (this.db) {
+                const left = store.get(K_INDEX, null);
+                if (left) store.set(K_INDEX, left.filter(p => p.id !== id));
+                await idb.run(this.db, 'readwrite', (p, i) => { p.delete(id); i.delete(id); });
+            } else store.set(K_INDEX, this.index);
         }
     };
 
@@ -47,8 +122,18 @@ GK.module('editor/app', { runtime: false }, function (GK) {
 
         init() {
             this.prefs = store.get(K_PREFS, { left: 270, right: 340, bottom: 230, outliner: 40, shadows: 'high', particles: true, toured: false });
-            const ed = this.ed = new GK.Editor.Editor(document.getElementById('viewport'));
-            GK.editor = ed;
+            let ed;
+            try {
+                if (!GK.Engine.webglSupport().ok) throw new Error('WebGL unavailable');
+                ed = this.ed = new GK.Editor.Editor(document.getElementById('viewport'));
+            } catch (e) {
+                const app = document.getElementById('app');
+                if (app) app.remove();
+                GK.Engine.showUnsupported(document.body, 'editor');
+                this.ed = null;
+                this.unsupported = true;
+                return;
+            }
             this.panels = new GK.Editor.Panels(ed);
             this._layout();
             this._menubar();
@@ -64,7 +149,10 @@ GK.module('editor/app', { runtime: false }, function (GK) {
             ed.on('meta', () => this._title());
             ed.on('world', () => this._title());
             ed.log('GamerKraft Engine ' + GK.version + ' initialised (three.js r' + THREE.REVISION + ', ' + (ed.engine.renderer.capabilities.isWebGL2 ? 'WebGL2' : 'WebGL1') + ')', 'info', 'LogInit');
-            this._boot();
+            this.ready = Storage.init().catch(e => ed.log('Project storage: ' + e.message, 'warn', 'LogSave')).then(() => this._boot()).then(() => {
+                GK.editor = ed;
+                ed.log('Projects are stored in this browser (' + (Storage.db ? 'IndexedDB' : 'localStorage') + ')', 'info', 'LogSave');
+            });
             let last = performance.now();
             const loop = now => {
                 requestAnimationFrame(loop);
@@ -75,21 +163,24 @@ GK.module('editor/app', { runtime: false }, function (GK) {
             };
             requestAnimationFrame(loop);
             setInterval(() => { if (ed.dirty && !ed.pie) this.save(true); }, 60000);
-            window.addEventListener('beforeunload', () => { if (ed.dirty && !ed.pie) this.save(true); });
+            document.addEventListener('visibilitychange', () => { if (document.hidden && ed.dirty && !ed.pie) this.save(true); });
+            window.addEventListener('beforeunload', () => { if (ed.dirty && !ed.pie) { Storage.rescue(ed.world.toJSON()); this.save(true); } });
         },
 
-        _boot() {
+        async _boot() {
             const legacy = store.get('gamerkraft_autosave_v2', null);
             if (legacy && !Storage.list().length) {
                 try {
                     const w = GK.World.fromJSON(legacy);
                     w.meta.name = 'Migrated Level (v2)';
-                    Storage.save(w.toJSON());
+                    await Storage.save(w.toJSON());
                     this.ed.log('Migrated your previous GamerKraft v2 level into a project', 'success', 'LogInit');
                 } catch (e) { }
             }
+            const shared = GK.Share.parse(location.hash);
+            if (shared && shared.mode === 'edit' && await this.openShared(shared.data)) return;
             const last = store.get(K_LAST, null);
-            const data = last && Storage.load(last);
+            const data = last && await Storage.load(last);
             if (data) {
                 try { this.ed.loadProject(data); this._title(); return; }
                 catch (e) { this.ed.log('Could not open last project: ' + e.message, 'error'); }
@@ -97,7 +188,43 @@ GK.module('editor/app', { runtime: false }, function (GK) {
             this.ed.loadProject(GK.Templates.create('platformer'));
             this.ed.world.meta.id = U.uid();
             this._title();
-            setTimeout(() => this.projectBrowser(true), 200);
+            this.projectBrowser(true);
+        },
+
+        // Opens a game from a Remix link as a new project. A Level Script is code, so the user
+        // decides whether to keep one from someone else before it can ever run.
+        async openShared(data) {
+            // The link is cleared once the copy exists, so a reload does not import it twice.
+            const clear = () => history.replaceState(null, '', location.pathname + location.search);
+            let project;
+            try { project = await GK.Share.decode(data); }
+            catch (e) {
+                clear();
+                UI.toast('That remix link is damaged or incomplete: ' + e.message, 'error');
+                this.ed.log('Could not open remix link: ' + e.message, 'error', 'LogSave');
+                return false;
+            }
+            const w = GK.World.fromJSON(project);
+            w.meta.id = U.uid();
+            w.meta.name = (w.meta.name || 'Shared Game') + ' (Remix)';
+            let done = false;
+            const finish = () => {
+                if (done) return;
+                done = true;
+                clear();
+                this.ed.loadProject(w.toJSON());
+                this.save(true);
+                this._title();
+                UI.toast('Opened "' + w.meta.name + '". It is your own copy now.', 'success');
+            };
+            if (!w.script.trim()) { finish(); return true; }
+            this.ed.loadProject(GK.Templates.create('blank'));
+            UI.modal('Shared Level Script', h('div', { style: { maxWidth: '460px', lineHeight: '1.6' } },
+                'This game includes a Level Script: code that runs when you press Play. Keep it only if you trust whoever sent the link. You can read it in the Level Script tab either way.'), [
+                { label: 'Remove Script', action: () => { w.script = ''; finish(); } },
+                { label: 'Keep Script', primary: true, action: () => finish() }
+            ], { icon: 'shield-alert', sticky: true, onClose: () => { if (!done) { w.script = ''; finish(); } } });
+            return true;
         },
 
         _title() {
@@ -107,27 +234,35 @@ GK.module('editor/app', { runtime: false }, function (GK) {
             document.title = (w.meta.name || 'Untitled') + ' — GamerKraft Engine';
         },
 
+        // Resolves to true once the project is stored in this browser.
         save(silent) {
             const ed = this.ed;
-            if (ed.pie) { UI.toast('Stop Play before saving', 'warn'); return; }
+            if (ed.pie) { UI.toast('Stop Play before saving', 'warn'); return Promise.resolve(false); }
             const data = ed.world.toJSON();
             let thumb = '';
             try { thumb = ed.engine.snapshot(240, 135, ed.activeCamera); } catch (e) { }
-            if (!Storage.save(data, thumb)) { UI.toast('Save failed: browser storage is full. Use File ▸ Export Project File.', 'error'); ed.log('Save failed (storage quota)', 'error', 'LogSave'); return false; }
             ed.clearDirty();
-            ed.log((silent ? 'Autosaved ' : 'Saved ') + '"' + data.meta.name + '"', 'success', 'LogSave');
-            if (!silent) UI.toast('Saved "' + data.meta.name + '"', 'success');
-            return true;
+            return Storage.save(data, thumb).then(ok => {
+                if (!ok) {
+                    ed.markDirty();
+                    UI.toast('Save failed: this browser has no storage space left. Free some space, or use File ▸ Export Project File.', 'error');
+                    ed.log('Save failed (storage full)', 'error', 'LogSave');
+                    return false;
+                }
+                ed.log((silent ? 'Autosaved ' : 'Saved ') + '"' + data.meta.name + '"', 'success', 'LogSave');
+                if (!silent) UI.toast('Saved "' + data.meta.name + '"', 'success');
+                return true;
+            });
         },
         newProject(tid, name) {
             const data = GK.Templates.create(tid, name);
             this.ed.loadProject(data);
-            this.save(true);
             this._title();
             UI.toast('Created "' + data.meta.name + '" from the ' + GK.Templates.get(tid).name + ' template', 'success');
+            return this.save(true);
         },
-        openProject(id) {
-            const data = Storage.load(id);
+        async openProject(id) {
+            const data = await Storage.load(id);
             if (!data) { UI.toast('Project not found', 'error'); return; }
             this.ed.loadProject(data);
             store.set(K_LAST, id);
@@ -164,6 +299,41 @@ GK.module('editor/app', { runtime: false }, function (GK) {
             inp.click();
         },
 
+        // A link anyone can open to play (or remix) this game, with the whole game inside the link.
+        async shareDialog() {
+            const ed = this.ed, w = ed.world;
+            if (ed.pie) { UI.toast('Stop Play before sharing', 'warn'); return; }
+            let links;
+            try { links = await GK.Share.links(w.toJSON()); }
+            catch (e) { UI.toast('Could not create a link: ' + e.message, 'error'); return; }
+            const S = GK.Share, tooBig = links.length > S.MAX_LINK;
+            const field = (value, label, note) => {
+                const inp = h('input.inp.share-link', { value, readOnly: true });
+                inp.addEventListener('focus', () => inp.select());
+                const copy = h('button.btn', { on: { click: async () => {
+                    try { await navigator.clipboard.writeText(value); UI.toast(label + ' copied', 'success'); }
+                    catch (e) { inp.select(); document.execCommand('copy'); UI.toast(label + ' copied', 'success'); }
+                } } }, UI.icon('copy', 13), 'Copy');
+                return h('div', { style: { marginBottom: '14px' } }, h('div', { style: { fontWeight: 600, marginBottom: '4px' } }, label),
+                    h('div', { style: { display: 'flex', gap: '6px' } }, inp, copy), h('div.muted', { style: { marginTop: '4px', lineHeight: 1.5 } }, note));
+            };
+            const problems = this.mapCheck(true);
+            const kb = (links.length / 1024).toFixed(1);
+            const body = h('div', { style: { width: '560px', maxWidth: '100%' } },
+                tooBig ? h('div', { style: { color: '#f87171', marginBottom: '12px' } }, 'This level is too big to fit in a link (' + kb + ' KB). Use Package Project to share it as a file.') : [
+                    field(links.play, 'Play link', 'Anyone who opens it plays the game straight away in their browser, on phones too. Nothing to install and no account.'),
+                    field(links.edit, 'Remix link', 'Opens a copy in the GamerKraft editor so others can build on your game. Your project stays yours.')
+                ],
+                h('div.help-text', { style: { padding: '0' } }, 'The whole game is stored inside the link itself, so nothing is uploaded and the link keeps working as long as this site is up. ' +
+                    'Link size: ' + kb + ' KB.' + (links.length > S.LONG_LINK ? ' Some chat apps shorten long messages; if a link gets cut off, send it by email or paste it into a notes or docs app.' : '')),
+                problems.length ? h('div', { style: { marginTop: '10px', color: '#e8c35b' } }, UI.icon('triangle-alert', 13), ' Map Check found ' + problems.length + ' issue(s): ' + problems.map(p => p.msg).join('; ')) : null);
+            const buttons = [{ label: 'Close' }];
+            if (!tooBig && navigator.share) buttons.unshift({ label: 'Share…', action: () => { navigator.share({ title: w.meta.name, text: 'Play ' + w.meta.name + ', made with GamerKraft', url: links.play }).catch(() => {}); return false; } });
+            if (!tooBig) buttons.push({ label: 'Open Play Link', primary: true, action: () => { window.open(links.play, '_blank', 'noopener'); return false; } });
+            UI.modal('Share Game', body, buttons, { icon: 'share-2', focus: false });
+            ed.log('Share link created (' + kb + ' KB)', 'info', 'LogShare');
+            return links;
+        },
         packageDialog() {
             const ed = this.ed, w = ed.world;
             const o = { quality: 'medium', showFps: false };
@@ -180,6 +350,7 @@ GK.module('editor/app', { runtime: false }, function (GK) {
                     return s;
                 })()),
                 h('div.help-text', { style: { padding: '4px 0 0' } }, 'The packaged game is a single HTML file containing the engine runtime, three.js and your level. It runs offline in any modern browser, on desktop (mouse/keyboard/gamepad) and mobile (touch controls).'),
+                h('div.help-text', { style: { padding: '4px 0 0' } }, 'No file needed? File ▸ Share Game Link gives a link anyone can play online.'),
                 problems.length ? h('div', { style: { marginTop: '10px', color: '#e8c35b' } }, UI.icon('triangle-alert', 13), ' Map Check found ' + problems.length + ' issue(s): ' + problems.map(p => p.msg).join('; ')) : null);
             UI.modal('Package Project', body, [
                 { label: 'Cancel' },
@@ -360,6 +531,7 @@ GK.module('editor/app', { runtime: false }, function (GK) {
                     { label: 'Import Project File…', icon: 'upload', action: () => this.importFile() },
                     { label: 'Export Project File', icon: 'download', action: () => this.exportFile() },
                     '-',
+                    { label: 'Share Game Link…', icon: 'share-2', action: () => this.shareDialog() },
                     { label: 'Package Project…', icon: 'package', action: () => this.packageDialog() },
                     { label: 'Play Standalone', icon: 'app-window', action: () => this.playStandalone() }
                 ],
@@ -465,7 +637,7 @@ GK.module('editor/app', { runtime: false }, function (GK) {
             const playMenu = h('button.tb', { title: 'Play options', style: { padding: '0 4px' } }, UI.icon('ellipsis-vertical', 14));
             playMenu.addEventListener('mousedown', e => { e.stopPropagation(); UI.menuAt(playMenu, [{ label: 'Play in Viewport', icon: 'play', kb: 'Alt+P', action: () => ed.startPIE() }, { label: 'Play Standalone (new window)', icon: 'app-window', action: () => this.playStandalone() }]); });
             const pkg = h('button.tb', { title: 'Platforms / packaging' }, UI.icon('package', 16), h('span', 'Platforms'), UI.icon('chevron-down', 10));
-            pkg.addEventListener('mousedown', e => { e.stopPropagation(); UI.menuAt(pkg, [{ head: 'Web (HTML5)' }, { label: 'Package Project…', icon: 'package', action: () => this.packageDialog() }, { label: 'Play Standalone', icon: 'app-window', action: () => this.playStandalone() }, '-', { label: 'Map Check', icon: 'list-checks', action: () => this.mapCheck() }]); });
+            pkg.addEventListener('mousedown', e => { e.stopPropagation(); UI.menuAt(pkg, [{ head: 'Web (HTML5)' }, { label: 'Share Game Link…', icon: 'share-2', action: () => this.shareDialog() }, { label: 'Package Project…', icon: 'package', action: () => this.packageDialog() }, { label: 'Play Standalone', icon: 'app-window', action: () => this.playStandalone() }, '-', { label: 'Map Check', icon: 'list-checks', action: () => this.mapCheck() }]); });
             const render = h('button.tb', { title: 'Path traced rendering' }, UI.icon('aperture', 16), h('span', 'Render'), UI.icon('chevron-down', 10));
             render.addEventListener('mousedown', e => {
                 e.stopPropagation();
@@ -484,7 +656,7 @@ GK.module('editor/app', { runtime: false }, function (GK) {
                         { label: 'Viewport Stats', checked: ed.show.stats, action: () => { ed.show.stats = !ed.show.stats; } }]));
             });
             tb.append(btn('save', '', 'Save (Ctrl+S)', () => this.save()), btn('folder-open', 'Content', 'Open Content Browser', () => { if (this._hidden && this._hidden.bottom) this.togglePanel('bottom'); this.panels.bottomTabs.select('content'); }), h('div.sep'),
-                modeBtn, add, h('div.grow'), play, pause, stop, playMenu, h('div.grow'), btn('list-checks', '', 'Map Check', () => this.mapCheck()), render, pkg, settings);
+                modeBtn, add, h('div.grow'), play, pause, stop, playMenu, h('div.grow'), btn('list-checks', '', 'Map Check', () => this.mapCheck()), btn('share-2', 'Share', 'Share this game as a link anyone can play', () => this.shareDialog(), 'share'), render, pkg, settings);
             const sync = () => { const on = !!ed.pie; play.disabled = on; pause.disabled = !on; stop.disabled = !on; };
             ed.on('pie', sync);
             sync();
@@ -547,7 +719,8 @@ GK.module('editor/app', { runtime: false }, function (GK) {
                 landscape: 'Hold LMB: sculpt • Shift: invert • RMB+WASD: fly',
                 foliage: 'Hold LMB: paint foliage • Shift: erase • RMB+WASD: fly'
             };
-            const t = hints[ed.mode];
+            const touch = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+            const t = touch ? (ed.placing ? `Tap to place ${A.get(ed.placing).label}` : { select: 'Tap: select', build: 'Tap or drag: place blocks', landscape: 'Drag: sculpt', foliage: 'Drag: paint foliage' }[ed.mode] + ' • Two fingers: orbit • Pinch: zoom') : hints[ed.mode];
             if (this._hint.textContent !== t) this._hint.textContent = t;
             if (this._sbStats) {
                 const txt = `${ed.world.actors.length} actors • ${ed.world.size}×${ed.world.size} map`;
@@ -708,6 +881,7 @@ GK.module('editor/app', { runtime: false }, function (GK) {
                 ['#details-panel', 'Details & World Settings', 'Edit the selected actor’s transform and properties. World Settings holds the win condition, player tuning, sky, time of day and music.'],
                 ['#dock-bottom', 'Content Browser, Output Log & Level Script', 'Browse blocks and actors, read engine messages, and write a Level Script that reacts to gameplay events.'],
                 ['#toolbar .tb.play', 'Play In Editor', 'Test your game instantly inside the viewport (Alt+P). Press Esc to pause and Esc again to stop — the level is restored exactly.'],
+                ['#toolbar .tb.share', 'Share', 'Share gives you a link to your game. Anyone who opens it plays instantly in their browser, even on a phone, with nothing to install. A Remix link lets others build on a copy.'],
                 ['#toolbar .tb:nth-last-child(3)', 'Render', 'Path trace photoreal stills, turntable videos and time-lapses of your level, free in the browser: global illumination, soft shadows, reflections, glass and water. The viewport view-mode menu (next to Perspective) has a real-time Ray Traced mode, which games can use too, and a Path Traced preview.'],
                 ['#toolbar .tb:nth-last-child(2)', 'Package', 'Platforms ▸ Package Project exports a single offline HTML file you can share or host anywhere, with touch and gamepad support.']
             ];
@@ -737,6 +911,14 @@ GK.module('editor/app', { runtime: false }, function (GK) {
         }
     };
 
-    window.addEventListener('DOMContentLoaded', () => { if (!App.ed) App.init(); });
-    if (document.readyState !== 'loading') setTimeout(() => { if (!App.ed) App.init(); }, 0);
+    // A #play= link turns this page into the game; anything else opens the editor.
+    const start = () => {
+        if (App.ed || App.unsupported || App.playing) return;
+        const shared = GK.Share.parse(location.hash);
+        if (shared && shared.mode === 'play') { App.playing = GK.Share.play(shared.data); return; }
+        App.init();
+    };
+    window.addEventListener('DOMContentLoaded', start);
+    if (document.readyState !== 'loading') setTimeout(start, 0);
+    window.addEventListener('hashchange', () => { if (GK.Share.parse(location.hash)) location.reload(); });
 });
