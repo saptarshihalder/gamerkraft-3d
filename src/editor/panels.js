@@ -510,6 +510,13 @@ GK.module('editor/panels', { runtime: false }, function (GK) {
                 S('env.ambient', { label: 'Ambient Light', type: 'slider', min: 0, max: 3, step: 0.05 }),
                 S('env.exposure', { label: 'Exposure', type: 'slider', min: 0.2, max: 3, step: 0.05 })
             ]));
+            body.appendChild(UI.section('Ray Tracing', [
+                S('render.rt.quality', { label: 'Quality', type: 'enum', options: Object.keys(GK.RayTracer.QUALITY).map(k => [k, GK.RayTracer.QUALITY[k].label]),
+                    description: 'Low: hard shadows. Medium: soft shadows, reflections. High: shadows in reflections, more lights. Ultra: one-bounce global illumination' }),
+                S('render.rt.resolution', { label: 'Resolution', type: 'enum', options: [['auto', 'Auto (by quality)'], ['50', '50%'], ['75', '75%'], ['100', '100%']] }),
+                S('render.rt.game', { label: 'On in Games by Default', type: 'bool', description: 'Packaged games start with ray tracing on; players can switch it in the pause menu' }),
+                h('div.help-text', 'Preview it with the Ray Traced view mode. Games fall back to standard rendering on devices without WebGL2.')
+            ], { collapsed: true }));
             body.appendChild(UI.section('Audio', [
                 S('audio.music', { label: 'Music', type: 'enum', options: [['none', 'None'], ['calm', 'Calm'], ['action', 'Action'], ['mystery', 'Mystery'], ['retro', 'Retro']] }),
                 S('audio.musicVolume', { label: 'Music Volume', type: 'slider', min: 0, max: 1, step: 0.05 })

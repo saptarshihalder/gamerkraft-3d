@@ -13,7 +13,14 @@ GK.module('runtime/player', function (GK) {
             document.body.appendChild(root);
 
             const world = GK.World.fromJSON(project);
-            const engine = new GK.Engine(root, { shadowQuality: opts.quality || 'medium' });
+            let engine;
+            try {
+                if (!GK.Engine.webglSupport().ok) throw new Error('WebGL unavailable');
+                engine = new GK.Engine(root, { shadowQuality: opts.quality || 'medium' });
+            } catch (e) {
+                GK.Engine.showUnsupported(root, 'game');
+                return;
+            }
             engine.setWorld(world);
             engine.worldView.setEditorVisuals(false);
             engine.worldView.flush();
@@ -21,13 +28,20 @@ GK.module('runtime/player', function (GK) {
             const input = new GK.Input(engine.renderer.domElement);
             const prefsKey = 'gk.player.' + (world.meta.id || 'game');
             const prefs = U.store.get(prefsKey, { volume: 0.6, sens: 1, invertY: false, best: null });
+            const rtSettings = world.settings.render.rt;
+            if (prefs.rt != null ? prefs.rt : rtSettings.game) engine.setRayTracing({ quality: prefs.rtQuality || rtSettings.quality, resolution: rtSettings.resolution });
             GK.Audio.volume = prefs.volume;
             input.sensitivity = prefs.sens;
             input.invertY = prefs.invertY;
             if (GK.Input.isTouchDevice()) input.addTouch(root);
 
             let game = null;
-            const savePrefs = () => { prefs.volume = GK.Audio.volume; prefs.sens = input.sensitivity; prefs.invertY = input.invertY; U.store.set(prefsKey, prefs); };
+            const savePrefs = () => {
+                prefs.volume = GK.Audio.volume; prefs.sens = input.sensitivity; prefs.invertY = input.invertY;
+                prefs.rt = !!engine.rt;
+                if (engine.rt) prefs.rtQuality = engine.rt.options.quality;
+                U.store.set(prefsKey, prefs);
+            };
 
             const startGame = () => {
                 GK.Audio.ensure();
