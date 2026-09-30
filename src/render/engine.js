@@ -302,6 +302,7 @@ GK.module('render/engine', function (GK) {
             this.worldView = new WorldView(this);
             this.particles = new Particles(this.scene);
             this.envOverrideTime = null;
+            this.rt = null;
             this.info = { fps: 60 };
             this._frames = 0; this._fpsT = performance.now();
             this.resize();
@@ -323,6 +324,23 @@ GK.module('render/engine', function (GK) {
             this.world = world;
             this.worldView.attach(world);
             this.applyEnvironment();
+            if (this.rt) this.rt.setWorld(world);
+        }
+
+        // Real-time ray tracing (GK.RayTracer). opts: false to turn it off, or { quality, resolution }.
+        // Returns { ok, reason }; unsupported hardware keeps the raster renderer.
+        setRayTracing(opts) {
+            if (!opts) {
+                if (this.rt) { this.rt.dispose(); this.rt = null; }
+                return { ok: true };
+            }
+            if (!this.rt) {
+                const s = GK.RayTracer.support(this.renderer);
+                if (!s.ok) return s;
+                this.rt = new GK.RayTracer(this);
+            }
+            this.rt.setOptions(opts);
+            return { ok: true };
         }
 
         applyEnvironment() {
@@ -402,7 +420,9 @@ GK.module('render/engine', function (GK) {
         }
 
         render(camera) {
-            this.renderer.render(this.scene, camera || this.camera);
+            camera = camera || this.camera;
+            if (this.rt && this.rt.render(camera)) return;
+            this.renderer.render(this.scene, camera);
         }
 
         snapshot(w, h, camera) {
@@ -419,6 +439,7 @@ GK.module('render/engine', function (GK) {
         }
 
         dispose() {
+            this.setRayTracing(false);
             this.worldView.detach();
             this.renderer.dispose();
             this.renderer.domElement.remove();
