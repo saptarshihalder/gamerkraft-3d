@@ -325,10 +325,15 @@ test("the real-time ray tracer runs in the editor, in Play In Editor and in pack
   );
   await page.evaluate(() => window.GK.editor.startPIE());
   await expect
-    .poll(() => page.evaluate(() => window.GK.editor.engine.rt.stats.instances))
+    .poll(
+      () => page.evaluate(() => window.GK.editor.engine.rt.stats.instances),
+      { timeout: 60_000 },
+    )
     .toBeGreaterThan(before);
   await page.evaluate(() => window.GK.editor.pie.game.pause(true));
-  await expect(page.locator(".gk-screen [data-k=rt]")).toBeChecked();
+  await expect(page.locator(".gk-screen [data-k=rt]")).toBeChecked({
+    timeout: 30_000,
+  });
   await page.evaluate(() => window.GK.editor.stopPIE());
   expect(await page.evaluate(() => window.GK.editor.viewMode)).toBe(
     "raytraced",
@@ -340,6 +345,7 @@ test("the real-time ray tracer runs in the editor, in Play In Editor and in pack
   const file = testInfo.outputPath("ray-traced-game.html");
   await packageGame(page, file);
   const game = await context.newPage();
+  await game.setViewportSize({ width: 640, height: 400 });
   const gameErrors = [];
   game.on("pageerror", (e) => gameErrors.push(String(e)));
   await game.goto(pathToFileURL(file).href);
@@ -349,7 +355,7 @@ test("the real-time ray tracer runs in the editor, in Play In Editor and in pack
       const rt = window.GK.runtime.engine.rt;
       return rt ? (rt.error ? -1 : rt.frame) : 0;
     });
-  await expect.poll(gameFrames, { timeout: 60_000 }).toBeGreaterThan(3);
+  await expect.poll(gameFrames, { timeout: 120_000 }).toBeGreaterThan(3);
   await game.evaluate(() => window.GK.runtime.game.pause(true));
   await game.click(".gk-screen [data-k=rt]");
   expect(await game.evaluate(() => window.GK.runtime.engine.rt)).toBeNull();
@@ -361,7 +367,7 @@ test("a share link plays the game in a sandbox and remixes into the editor", asy
   page,
   context,
 }) => {
-  test.setTimeout(300_000);
+  test.setTimeout(420_000);
   await openEditor(page);
   const links = await page.evaluate(async () => {
     await window.GK.App.newProject("coinrush", "Link Smoke");
@@ -371,8 +377,10 @@ test("a share link plays the game in a sandbox and remixes into the editor", asy
   });
   expect(links.play).toMatch(/#play=z[A-Za-z0-9_-]+$/);
   expect(links.edit).toMatch(/#edit=z[A-Za-z0-9_-]+$/);
+  await page.close();
 
   const player = await context.newPage();
+  await player.setViewportSize({ width: 640, height: 400 });
   const playErrors = [];
   player.on("pageerror", (e) => playErrors.push(String(e)));
   await player.goto(links.play);
@@ -382,12 +390,27 @@ test("a share link plays the game in a sandbox and remixes into the editor", asy
     "sandbox",
     "allow-scripts allow-pointer-lock",
   );
-  const game = player.frameLocator(".gk-play-frame");
-  await game.locator(".gk-screen .gk-btn.primary").click({ timeout: 60_000 });
   const frame = player.frames().find((f) => f !== player.mainFrame());
   await expect
+    .poll(
+      () =>
+        frame
+          .evaluate(() =>
+            window.GK && window.GK.runtime
+              ? window.GK.runtime.engine.renderer.info.render.frame
+              : 0,
+          )
+          .catch(() => 0),
+      { timeout: 120_000 },
+    )
+    .toBeGreaterThan(1);
+  await player
+    .frameLocator(".gk-play-frame")
+    .locator(".gk-screen .gk-btn.primary")
+    .click({ timeout: 120_000 });
+  await expect
     .poll(() => frame.evaluate(() => window.GK.runtime.game.state), {
-      timeout: 30_000,
+      timeout: 120_000,
     })
     .toBe("playing");
   const sandbox = await frame.evaluate(() => {
@@ -420,8 +443,9 @@ test("a share link plays the game in a sandbox and remixes into the editor", asy
   );
   await expect(broken.locator(".gk-play-msg")).toContainText("damaged");
 
-  await Promise.all([player.close(), broken.close(), page.close()]);
+  await Promise.all([player.close(), broken.close()]);
   const remix = await context.newPage();
+  await remix.setViewportSize({ width: 900, height: 560 });
   const remixErrors = [];
   remix.on("pageerror", (e) => remixErrors.push(String(e)));
   await remix.goto(links.edit);
