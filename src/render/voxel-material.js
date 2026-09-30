@@ -9,8 +9,6 @@ GK.module('render/voxel-material', function (GK) {
         uGrassRatio: { value: new THREE.Vector3(1, 1, 1) }
     };
 
-    // Procedural block surfaces. Reads vMat, vGkPos, vGkNormal, uTime and uGrassRatio; the path
-    // tracer (render/pathtracer) reuses this source with those names declared as plain globals.
     const SURFACE_GLSL = `
 float gkH2(vec2 p) {
     p = fract(p * vec2(123.34, 456.21));
@@ -33,7 +31,6 @@ float gkFbm(vec2 p) {
     for (int i = 0; i < 4; i++) { s += a * gkN2(p); p *= 2.03; a *= 0.5; }
     return s;
 }
-// Jittered-grid cells: returns ~0 near cell borders; id is a per-cell random.
 float gkCells(vec2 p, out float id) {
     vec2 i = floor(p);
     vec2 f = fract(p);
@@ -67,31 +64,31 @@ void gkSurface(inout vec3 col, inout float alpha, inout float rough, inout float
 
     if (m == 1) {
         col *= 0.9 + 0.2 * pn;
-    } else if (m == 2) {            // grass top
+    } else if (m == 2) {
         col *= 0.78 + 0.28 * pn + 0.12 * gkN2(uv * 3.0);
         if (gkH2(px + 31.0) > 0.9) col *= 1.18;
         rough = 0.95;
-    } else if (m == 3) {            // grass side: dirt with a ragged grass fringe
+    } else if (m == 3) {
         float jag = 0.8 + 0.1 * gkH2(vec2(px.x, cell.y + 5.0));
         col *= 0.78 + 0.35 * pn;
         if (f.y > jag) col *= uGrassRatio * 1.05;
         else if (f.y > jag - 0.08 && gkH2(px + 9.0) > 0.55) col *= uGrassRatio * 0.85;
         rough = 0.95;
-    } else if (m == 4) {            // dirt
+    } else if (m == 4) {
         col *= 0.75 + 0.4 * pn;
         if (gkH2(px + 3.0) > 0.93) col *= 0.7;
         rough = 0.95;
-    } else if (m == 5) {            // stone
+    } else if (m == 5) {
         col *= 0.8 + 0.18 * gkN2(uv * 2.5 + cell.xz) + 0.12 * pn;
         if (gkH2(floor(uv * 8.0) + cell.y) > 0.94) col *= 0.82;
-    } else if (m == 6) {            // cobblestone
+    } else if (m == 6) {
         float e = gkCells(uv * 2.6, tmp);
         col *= mix(0.5, 0.85 + 0.3 * tmp, smoothstep(0.02, 0.12, e));
         col *= 0.92 + 0.12 * pn;
-    } else if (m == 7) {            // sand
+    } else if (m == 7) {
         col *= 0.9 + 0.12 * pn + 0.05 * sin(uv.x * 5.0 + gkN2(uv * 2.0) * 3.0);
         rough = 0.95;
-    } else if (m == 8) {            // planks
+    } else if (m == 8) {
         float r = floor(f.y * 4.0);
         float seam = fract(f.y * 4.0);
         float rowH = gkH2(vec2(r, cell.x * 7.0 + cell.z * 3.0 + cell.y * 11.0));
@@ -100,46 +97,46 @@ void gkSurface(inout vec3 col, inout float alpha, inout float rough, inout float
         float jx = fract(uv.x * 0.5 + rowH);
         if (seam < 0.08 || jx < 0.02) col *= 0.55;
         rough = 0.75;
-    } else if (m == 9) {            // log bark
+    } else if (m == 9) {
         col *= 0.7 + 0.35 * gkH2(vec2(px.x, floor(px.y / 4.0) + cell.y * 5.0));
         if (gkH2(vec2(px.x, 1.0)) > 0.8) col *= 0.75;
-    } else if (m == 10) {           // log end grain
+    } else if (m == 10) {
         vec2 c = f - 0.5;
         col *= 0.85 + 0.12 * sin(length(c) * 48.0) + 0.06 * pn;
         if (max(abs(c.x), abs(c.y)) > 0.43) col *= 0.45;
-    } else if (m == 11) {           // leaves
+    } else if (m == 11) {
         float n = gkH2(px + cell.xy * 3.0);
         col *= 0.55 + 0.7 * n * n;
         if (n < 0.12) col *= 0.5;
         rough = 0.9;
-    } else if (m == 12) {           // brick
+    } else if (m == 12) {
         float r = floor(f.y * 4.0);
         float bx = uv.x * 2.0 + mod(r, 2.0) * 0.5;
         float my = fract(f.y * 4.0);
         float mx = fract(bx);
         if (my < 0.1 || mx < 0.05) col = vec3(gkLuma(col)) * 1.9;
         else col *= 0.85 + 0.25 * gkH2(vec2(floor(bx), r + cell.y * 4.0)) + 0.1 * pn;
-    } else if (m == 13) {           // stone brick
+    } else if (m == 13) {
         float r = floor(f.y * 2.0);
         float bx = uv.x + mod(r, 2.0) * 0.5;
         if (fract(f.y * 2.0) < 0.06 || fract(bx) < 0.03) col *= 0.55;
         else col *= 0.85 + 0.12 * gkH2(vec2(floor(bx), r + cell.y)) + 0.1 * pn + 0.08 * gkN2(uv * 6.0);
-    } else if (m == 14) {           // concrete / colored blocks
+    } else if (m == 14) {
         col *= 0.97 + 0.05 * pn;
         if (edge < 0.02) col *= 0.85;
         rough = 0.8;
-    } else if (m == 15) {           // metal plate
+    } else if (m == 15) {
         col *= 0.9 + 0.1 * gkH2(vec2(floor(uv.y * 64.0), cell.x + cell.z));
         if (edge < 0.035) col *= 0.6;
         float rv = min(min(length(f - vec2(0.1)), length(f - vec2(0.9))), min(length(f - vec2(0.1, 0.9)), length(f - vec2(0.9, 0.1))));
         if (rv < 0.035) col *= 1.35;
         rough = 0.38; metal = 0.75;
-    } else if (m == 16) {           // floor tiles
+    } else if (m == 16) {
         vec2 t = fract(uv * 2.0);
         if (min(t.x, t.y) < 0.05) col *= 0.7;
         else col *= 0.95 + 0.07 * gkH2(floor(uv * 2.0) + cell.y);
         rough = 0.3;
-    } else if (m == 17) {           // glass
+    } else if (m == 17) {
         if (edge < 0.06) { alpha = 0.92; col *= 0.85; }
         else {
             alpha = 0.22;
@@ -147,18 +144,18 @@ void gkSurface(inout vec3 col, inout float alpha, inout float rough, inout float
             col += streak * 0.25; alpha += streak * 0.15;
         }
         rough = 0.05; metal = 0.1;
-    } else if (m == 18) {           // water
+    } else if (m == 18) {
         float w = gkN2(uv * 1.5 + vec2(uTime * 0.35, uTime * 0.22)) + gkN2(uv * 3.1 - vec2(uTime * 0.28, -uTime * 0.31)) * 0.5;
         col *= 0.8 + 0.3 * w;
         alpha = 0.72;
         rough = 0.05;
         if (vGkNormal.y > 0.5) col += smoothstep(1.2, 1.45, w) * 0.35;
-    } else if (m == 19) {           // lava
+    } else if (m == 19) {
         float n = gkFbm(uv * 1.3 + vec2(uTime * 0.12, uTime * 0.07));
         col = mix(vec3(0.35, 0.03, 0.0), vec3(1.0, 0.55, 0.08), smoothstep(0.3, 0.75, n));
         emis += col * 1.4;
         rough = 0.6;
-    } else if (m == 20) {           // prototype world grid
+    } else if (m == 20) {
         vec2 q = abs(fract(uv * 4.0 + 0.5) - 0.5);
         float minor = 1.0 - step(0.035, min(q.x, q.y));
         vec2 M = abs(fract(uv + 0.5) - 0.5);
@@ -168,46 +165,46 @@ void gkSurface(inout vec3 col, inout float alpha, inout float rough, inout float
         col *= 1.0 - 0.12 * minor;
         col = mix(col, col * 0.55, major);
         rough = 0.7;
-    } else if (m == 21) {           // ladder (alpha cutout)
+    } else if (m == 21) {
         bool rail = (f.x > 0.1 && f.x < 0.2) || (f.x > 0.8 && f.x < 0.9);
         float ry = fract(f.y * 4.0);
         bool rung = f.x > 0.1 && f.x < 0.9 && ry > 0.4 && ry < 0.58;
         if (!(rail || rung)) alpha = 0.0;
         col *= 0.85 + 0.2 * pn;
-    } else if (m == 22) {           // glow panel
+    } else if (m == 22) {
         float frame = step(edge, 0.07);
         emis += col * (1.2 - 0.9 * frame);
         col *= 1.0 - 0.4 * frame;
-    } else if (m == 23) {           // ice
+    } else if (m == 23) {
         col *= 0.9 + 0.12 * pn;
         if (gkCells(uv * 1.7, tmp) < 0.03) col *= 1.25;
         rough = 0.06; metal = 0.05;
-    } else if (m == 24) {           // snow
+    } else if (m == 24) {
         col *= 0.93 + 0.08 * pn;
         rough = 0.9;
-    } else if (m == 25) {           // slime
+    } else if (m == 25) {
         alpha = edge < 0.12 ? 0.85 : 0.55;
         col *= edge < 0.12 ? 1.0 : 1.15;
         rough = 0.12;
-    } else if (m == 26) {           // gold
+    } else if (m == 26) {
         col *= edge < 0.06 ? 0.75 : 0.95 + 0.1 * pn;
         rough = 0.28; metal = 1.0;
-    } else if (m == 27) {           // obsidian
+    } else if (m == 27) {
         col *= 0.75 + 0.25 * pn;
         if (gkH2(px + 5.0) > 0.95) col += vec3(0.1, 0.04, 0.18);
         rough = 0.15; metal = 0.2;
-    } else if (m == 28) {           // bedrock
+    } else if (m == 28) {
         col *= 0.5 + 0.9 * pn * pn;
-    } else if (m == 29) {           // marble
+    } else if (m == 29) {
         float v = abs(sin((uv.x + uv.y) * 2.5 + gkFbm(uv * 1.5 + cell.xz) * 6.0));
         col *= mix(0.72, 1.02, smoothstep(0.0, 0.2, v));
         rough = 0.2;
-    } else if (m == 30) {           // terracotta
+    } else if (m == 30) {
         col *= 0.9 + 0.08 * sin(f.y * 25.0) + 0.06 * pn;
-    } else if (m == 31) {           // gravel
+    } else if (m == 31) {
         float e = gkCells(uv * 5.0, tmp);
         col *= mix(0.6, 0.8 + 0.45 * tmp, smoothstep(0.02, 0.1, e));
-    } else if (m == 32) {           // neon
+    } else if (m == 32) {
         emis += col * (edge < 0.08 ? 2.2 : 0.9);
         col *= 0.6;
     }

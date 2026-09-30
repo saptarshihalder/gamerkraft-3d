@@ -68,7 +68,7 @@ async function cook(asset) {
 async function deployBrowser(manifest) {
   const browser = path.join(distRoot, 'browser');
   await rm(browser, { recursive: true, force: true }); await mkdir(browser, { recursive: true });
-  for (const name of ['index.html', 'css', 'src', 'vendor', 'assets']) await cp(path.join(root, name), path.join(browser, name), { recursive: true });
+  for (const name of ['index.html', 'css', 'src', 'vendor', 'assets', 'LICENSE']) await cp(path.join(root, name), path.join(browser, name), { recursive: true });
   await writeFile(path.join(browser, 'asset-manifest.json'), JSON.stringify(manifest, null, 2) + '\n');
   const standalone = await buildStandaloneEditor();
   await writeFile(path.join(browser, 'GamerKraft_Editor.html'), standalone);

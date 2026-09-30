@@ -1,11 +1,26 @@
 # GamerKraft Engine 3
 
-A browser-native 3D game engine and level editor with an Unreal Engine–style workflow.
-Build levels from voxels and actors, script gameplay, play-test in the viewport,
-render photoreal stills and videos with the built-in **path tracer**, and package a
-**single offline HTML file** that runs on desktop and mobile.
+A browser-based 3D game engine and level editor with an Unreal Engine–style workflow.
+Build levels from voxels and actors, script gameplay, play-test in the viewport, render with
+the built-in ray tracer and path tracer, and share games as links or single HTML files.
 
-No build step, no server: open `index.html`.
+Try it at **https://saptarshihalder.github.io/gamerkraft-3d/**. It runs in the browser, so
+there is nothing to install. Free and open source under the [MIT License](LICENSE).
+
+## Sharing games
+
+**Share** in the toolbar creates two links:
+
+- **Play**: opens straight into the game.
+- **Remix**: opens an editable copy in the editor.
+
+The project is compressed into the URL fragment (`#play=…` / `#edit=…`), so no server or
+account is involved. Shared games run in a sandboxed iframe. Remix asks before keeping another
+person's Level Script. Some chat apps truncate very long links; for big worlds use
+**Package Project** instead.
+
+Projects are saved in the browser (IndexedDB). Use File ▸ Export Project File to move one to
+another device.
 
 ## Editor
 
@@ -20,9 +35,11 @@ Status bar has a console (`help`).
 - **Build tools** — brush (cube/sphere, size 1–9, plane-locked strokes), box (solid / hollow / walls, add / remove / replace), erase, paint, flood fill, eyedropper
 - **Landscape** — raise, lower, flatten, smooth, paint; fBm terrain generator with 5 biomes (temperate, desert, snow, tropical island, volcanic)
 - **Undo/redo** — transactional history for blocks, actors, settings, script and map size (100 steps)
-- **Project Browser** — 8 templates with live-rendered thumbnails; multiple projects saved in the browser with autosave
+- **Project Browser** — 8 templates with live-rendered thumbnails; multiple projects saved in the browser (IndexedDB) with autosave
+- **Share Game Link** — Play and Remix links
+- **Touch** — tap, two-finger orbit and pinch zoom on tablets
 - **Play In Editor** — play-test in the viewport; the level is restored exactly on stop. *Play From Here* via right-click
-- **Map Check**, copy/paste, duplicate, snap-to-floor, top orthographic view, lit/unlit/wireframe, guided tour
+- **Map Check**, copy/paste, duplicate, snap-to-floor, top orthographic view, lit/unlit/wireframe/ray traced/path traced view modes, guided tour
 
 ### Templates
 Blank · Third Person Platformer · First Person Arena · Parkour Tower (Obby) · Coin Rush · Dungeon Crawler (procedural maze, keys & doors) · Survival Island · Sandbox Builder
@@ -36,40 +53,32 @@ Blank · Third Person Platformer · First Person Arena · Parkour Tower (Obby) �
 - **Audio** — procedural sound effects and 4 generative music tracks (WebAudio, no assets)
 - **HUD** — health, lives, score, coins, timer, objective, keys, jetpack fuel, minimap, pause menu with settings, victory/defeat screens with best times
 
-## Rendering
+## Ray tracing
 
-GamerKraft includes its own path tracer, written directly against WebGL2 (it does not use
-three.js). Rendering runs entirely on your GPU in the browser: it is free, needs no account or
-render farm, and nothing is uploaded.
+`src/render/raytracer.js` is a real-time hybrid ray tracer for WebGL2. It works in the editor
+viewport, in Play In Editor and in packaged games.
 
-- **Path Traced viewport**: choose *Path Traced* in the viewport's view-mode menu (next to
-  *Perspective*), the **Render** toolbar menu, or `r.pathtrace 1`. The view refines while you
-  look around and restarts when you edit blocks, actors or the sky.
-- **Render Image** (`Alt+R`): renders the current viewport camera at up to 8K. Resolution presets
-  run from 720p to 4K plus square and vertical, and you set the sample count. The finished image
-  saves as PNG or copies to the clipboard.
-- **Render Animation**: a turntable orbit around what the viewport is looking at, or a time-lapse
-  of the day cycle. Output is WebM video (WebCodecs VP9/VP8 with exact frame timing; MediaRecorder
-  fallback), a ZIP of PNG frames, or both.
+- Enable it with the *Ray Traced* view mode, the **Render** menu or `r.raytrace 1`.
+- Presets: Low, Medium, High, Ultra (`r.rt.quality`), plus a resolution override.
+- *On in Games by Default* (World Settings ▸ Ray Tracing) starts packaged games with it on.
+  Players can toggle it and change quality in the pause menu.
 
-What it simulates: global illumination with multiple bounces, soft sun shadows (adjustable sun
-size), GGX glossy and metallic reflections, glass/water/slime refraction with Fresnel and
-absorption, light scattering in water, torches and point lights, glowing blocks as area lights,
-depth of field with autofocus, the level's sky, clouds, stars and fog. Frames are progressively
-accumulated and cleaned by an edge-aware denoiser guided by normals, depth and albedo. ACES,
-Reinhard or linear tone mapping.
+It traces shadows, reflections, refraction, ambient occlusion and (Ultra) one-bounce GI, with
+temporal accumulation. Actors use a two-level BVH rebuilt each frame. three.js draws
+particles, transparent effects and editor helpers on top.
 
-How it works (`src/render/rt-scene.js`, `src/render/pathtracer.js`):
+## Path tracing
 
-- Voxels are uploaded as a 3D texture and traversed with a two-level DDA that skips empty
-  4³ bricks. Actor meshes, including instanced foliage, are flattened into a binned-SAH BVH.
-- Block surfaces use the same procedural GLSL as the raster renderer, so both match.
-- Every pixel keeps a running average of independent samples in float render targets. Work is
-  split into tiles and throttled with GPU fences so the editor stays responsive.
+`src/render/pathtracer.js` renders final-quality stills and animations on the GPU.
 
-Render settings (samples, bounces, camera, lighting, color, animation) are saved with the project.
-The path tracer needs WebGL2 with `EXT_color_buffer_float`, which current desktop and mobile
-browsers support. Packaged games do not include it.
+- *Path Traced* view mode (or `r.pathtrace 1`) refines progressively in the viewport.
+- **Render Image** (`Alt+R`): up to 8K, saved as PNG or copied to the clipboard.
+- **Render Animation**: turntable or day-cycle time-lapse, as WebM and/or a ZIP of PNG frames.
+
+Features: multi-bounce GI, soft shadows, GGX reflections, refraction and absorption, emissive
+blocks, depth of field, fog, denoising and ACES/Reinhard tone mapping. Render settings are
+saved with the project. Both tracers need WebGL2 with `EXT_color_buffer_float`. Packaged
+games include the ray tracer but not the path tracer.
 
 ## Level scripting
 
@@ -99,12 +108,11 @@ index.html            editor shell
 css/editor.css        UE5-style dark theme
 src/boot.js           module registry + bundler
 src/core/             util, blocks, world (chunks, raycast, serialization), actors
-src/render/           voxel shader, mesher, sky, engine (renderer, world view, particles),
-                      path tracer: rt-scene (scene packing, BVH), pathtracer (WebGL2),
-                      render-output (resolutions, animation paths, ZIP and WebM writers)
+src/render/           voxel shader, mesher, sky, engine, raytracer, pathtracer,
+                      rt-scene / rt-glsl (shared by both tracers), render-output
 src/runtime/          input/audio/physics, HUD, game session + scripting, standalone player
 src/editor/           UI kit, editor core (history, gizmo, tools, PIE), panels, templates,
-                      render-studio (Path Traced viewport, Render window), app
+                      render-studio, share (game links), app
 vendor/               three.js r128 (wrapped for the registry), lucide icons (editor only)
 ```
 
@@ -139,11 +147,22 @@ Contribution workflow and history: [CONTRIBUTING.md](CONTRIBUTING.md), [CHANGELO
 
 Pushes to `main` run the quality gate, then deploy `dist/browser` to GitHub Pages
 (`.github/workflows/pages.yml`). The deployed `index.html` is the single-file editor, so the
-page and engine always update atomically.
+page and engine always update atomically. Forks hosted elsewhere should update the
+`gk-public-url` meta tag in `index.html`.
 
 ## Save format
 
 Projects are JSON (`.gkproj`): `{ format, version: 3, meta, world: { size, height, chunks }, actors, settings, script }`.
+Share links carry the same JSON as `z` + base64url(deflate-raw) or, without
+`CompressionStream`, `j` + base64url.
 `settings.render` holds the render settings; older projects get the defaults.
 Chunks are run-length encoded, base64 16³ voxel arrays. Levels from GamerKraft v1/v2 are
 imported and migrated automatically (File ▸ Import, or the v2 browser autosave on first launch).
+
+## License
+
+[MIT](LICENSE). Games you make are yours; packaged games include a one-line MIT notice.
+
+Third-party code:
+- [three.js](https://threejs.org) r128, MIT, bundled in the editor and in packaged games.
+- [Lucide](https://lucide.dev) icons, ISC, editor only.
