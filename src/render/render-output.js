@@ -1,9 +1,6 @@
 GK.module('render/render-output', { runtime: false }, function (GK) {
     'use strict';
 
-    // DOM-free helpers for the render tools: resolution presets, animation camera paths and a
-    // store-only ZIP writer for image sequences.
-
     const RO = GK.RenderOutput = {};
 
     RO.RESOLUTIONS = [
@@ -28,7 +25,6 @@ GK.module('render/render-output', { runtime: false }, function (GK) {
     const norm = v => { const l = Math.hypot(v[0], v[1], v[2]) || 1; return [v[0] / l, v[1] / l, v[2] / l]; };
     const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
 
-    // Camera looking from pos towards target with world-up Y.
     RO.lookAt = function (pos, target) {
         let fwd = norm([target[0] - pos[0], target[1] - pos[1], target[2] - pos[2]]);
         if (Math.abs(fwd[1]) > 0.9999) fwd = norm([fwd[0] + 1e-4, fwd[1], fwd[2]]);
@@ -36,8 +32,6 @@ GK.module('render/render-output', { runtime: false }, function (GK) {
         return { pos: pos.slice(), fwd, right, up: cross(right, fwd) };
     };
 
-    // Per-frame camera and time of day for an animation. `base` is the camera at render start and
-    // `pivot` the point the turntable orbits (what the viewport is looking at).
     RO.animationFrame = function (anim, index, base, pivot, baseTime) {
         const n = Math.max(1, anim.frames | 0);
         const t = n > 1 ? index / (anim.type === 'orbit' && Math.abs(anim.degrees) >= 360 ? n : n - 1) : 0;
@@ -68,7 +62,6 @@ GK.module('render/render-output', { runtime: false }, function (GK) {
         return (c ^ 0xffffffff) >>> 0;
     };
 
-    // Uncompressed ZIP (PNG/JPEG frames are already compressed). entries: [{ name, data: Uint8Array }].
     RO.zip = function (entries, date) {
         const d = date || new Date();
         const dosTime = (d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1);
@@ -103,9 +96,6 @@ GK.module('render/render-output', { runtime: false }, function (GK) {
         for (const p of parts) { out.set(p, o); o += p.length; }
         return out;
     };
-
-    // ---- WebM (Matroska) muxer for WebCodecs output --------------------------------------------
-    // frames: [{ data: Uint8Array, ts: milliseconds, key: bool }] from one VP8/VP9 track.
 
     const bytesOf = (n, len) => { const out = new Uint8Array(len); for (let i = len - 1; i >= 0; i--) { out[i] = n % 256; n = Math.floor(n / 256); } return out; };
     const uintLen = n => { let len = 1; while (n >= Math.pow(2, 8 * len) && len < 8) len++; return len; };
@@ -145,7 +135,6 @@ GK.module('render/render-output', { runtime: false }, function (GK) {
             cur.parts.push(el(0xA3, concat([new Uint8Array([0x81, (rel >> 8) & 0xff, rel & 0xff, f.key ? 0x80 : 0]), f.data])));
         }
         flush();
-        // SeekHead positions use fixed 8-byte integers so its own length is known up front.
         const seekEntry = (id, pos) => el(0x4DBB, [el(0x53AB, ebmlId(id)), uintEl(0x53AC, pos, 8)]);
         const seekLen = el(0x114D9B74, [seekEntry(0x1549A966, 0), seekEntry(0x1654AE6B, 0), seekEntry(0x1C53BB6B, 0)]).length;
         const clustersAt = seekLen + info.length + tracks.length;

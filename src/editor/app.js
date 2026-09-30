@@ -5,23 +5,91 @@ GK.module('editor/app', { runtime: false }, function (GK) {
     const store = U.store;
     const K_INDEX = 'gk3.projects', K_PROJ = 'gk3.p.', K_LAST = 'gk3.last', K_PREFS = 'gk3.prefs';
 
+    const K_RESCUE = 'gk3.rescue';
+    const idb = {
+        open() {
+            return new Promise((resolve, reject) => {
+                if (typeof indexedDB === 'undefined') { reject(new Error('IndexedDB unavailable')); return; }
+                const r = indexedDB.open('gamerkraft', 1);
+                r.onupgradeneeded = () => { r.result.createObjectStore('projects'); r.result.createObjectStore('index'); };
+                r.onsuccess = () => resolve(r.result);
+                r.onerror = () => reject(r.error || new Error('IndexedDB failed to open'));
+                r.onblocked = () => reject(new Error('IndexedDB is blocked by another tab'));
+            });
+        },
+        run(db, mode, fn) {
+            return new Promise((resolve, reject) => {
+                const t = db.transaction(['projects', 'index'], mode);
+                const req = fn(t.objectStore('projects'), t.objectStore('index'));
+                t.oncomplete = () => resolve(req ? req.result : undefined);
+                t.onerror = () => reject(t.error);
+                t.onabort = () => reject(t.error || new Error('storage transaction aborted'));
+            });
+        }
+    };
     const Storage = {
-        list() { return store.get(K_INDEX, []).sort((a, b) => b.modified - a.modified); },
-        load(id) { return store.get(K_PROJ + id, null); },
-        save(data, thumb) {
+        db: null,
+        index: [],
+        get backend() { return this.db ? 'indexeddb' : 'localstorage'; },
+        async init() {
+            this.index = store.get(K_INDEX, []);
+            try { this.db = await idb.open(); }
+            catch (e) { this.db = null; this._rescue(); return; }
+            const known = await idb.run(this.db, 'readonly', (p, i) => i.getAll());
+            const ids = new Set(known.map(p => p.id));
+            const kept = [];
+            for (const entry of this.index) {
+                if (ids.has(entry.id)) { store.remove(K_PROJ + entry.id); continue; }
+                const data = store.get(K_PROJ + entry.id, null);
+                if (!data) continue;
+                try {
+                    await idb.run(this.db, 'readwrite', (p, i) => { p.put(data, entry.id); i.put(entry, entry.id); });
+                    store.remove(K_PROJ + entry.id);
+                } catch (e) { kept.push(entry); }
+                known.push(entry);
+            }
+            if (kept.length) store.set(K_INDEX, kept);
+            else if (this.index.length) store.remove(K_INDEX);
+            this.index = known;
+            await this._rescue();
+        },
+        async _rescue() {
+            const r = store.get(K_RESCUE, null);
+            if (!r || !r.data || !r.data.meta) return;
+            const cur = this.index.find(p => p.id === r.data.meta.id);
+            if (!cur || (r.time || 0) > (cur.modified || 0)) await this.save(r.data, null, r.time);
+            store.remove(K_RESCUE);
+        },
+        rescue(data) { return store.set(K_RESCUE, { data, time: Date.now() }); },
+        list() { return this.index.slice().sort((a, b) => b.modified - a.modified); },
+        async load(id) {
+            if (!this.db) return store.get(K_PROJ + id, null);
+            return (await idb.run(this.db, 'readonly', p => p.get(id))) || store.get(K_PROJ + id, null);
+        },
+        async save(data, thumb, time) {
             const id = data.meta.id;
-            const ok = store.set(K_PROJ + id, data);
-            if (!ok) return false;
-            const idx = store.get(K_INDEX, []).filter(p => p.id !== id);
-            const prev = store.get(K_INDEX, []).find(p => p.id === id);
-            idx.push({ id, name: data.meta.name, template: data.meta.template, modified: Date.now(), thumb: thumb || (prev && prev.thumb) || '' });
-            if (!store.set(K_INDEX, idx)) { idx.forEach(p => { p.thumb = ''; }); store.set(K_INDEX, idx); }
+            const prev = this.index.find(p => p.id === id);
+            const entry = { id, name: data.meta.name, template: data.meta.template, modified: time || Date.now(), thumb: thumb || (prev && prev.thumb) || '' };
+            if (this.db) {
+                try { await idb.run(this.db, 'readwrite', (p, i) => { p.put(data, id); i.put(entry, id); }); }
+                catch (e) { return false; }
+            } else {
+                if (!store.set(K_PROJ + id, data)) return false;
+                const idx = this.index.filter(p => p.id !== id).concat([entry]);
+                if (!store.set(K_INDEX, idx)) { idx.forEach(p => { p.thumb = ''; }); store.set(K_INDEX, idx); }
+            }
+            this.index = this.index.filter(p => p.id !== id).concat([entry]);
             store.set(K_LAST, id);
             return true;
         },
-        remove(id) {
+        async remove(id) {
+            this.index = this.index.filter(p => p.id !== id);
             store.remove(K_PROJ + id);
-            store.set(K_INDEX, store.get(K_INDEX, []).filter(p => p.id !== id));
+            if (this.db) {
+                const left = store.get(K_INDEX, null);
+                if (left) store.set(K_INDEX, left.filter(p => p.id !== id));
+                await idb.run(this.db, 'readwrite', (p, i) => { p.delete(id); i.delete(id); });
+            } else store.set(K_INDEX, this.index);
         }
     };
 
@@ -31,7 +99,7 @@ GK.module('editor/app', { runtime: false }, function (GK) {
             const esc = s => s.replace(/<\/(script)/gi, '<\\/$1').replace(/<!--/g, '<\\!--');
             const json = JSON.stringify(project).replace(/</g, '\\u003c').replace(/[\u2028\u2029]/g, c => '\\u' + c.charCodeAt(0).toString(16));
             const title = U.escapeHTML(project.meta.name || 'GamerKraft Game');
-            return '<!DOCTYPE html>\n<html lang="en"><head><meta charset="utf-8">' +
+            return '<!DOCTYPE html>\n<!-- Made with GamerKraft Engine ' + GK.version + ' - free and open source under the MIT License. Includes three.js (MIT). -->\n<html lang="en"><head><meta charset="utf-8">' +
                 '<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">' +
                 `<title>${title}</title><meta name="generator" content="GamerKraft Engine ${GK.version}">` +
                 (project.meta.description ? `<meta name="description" content="${U.escapeHTML(project.meta.description)}">` : '') +
@@ -47,8 +115,18 @@ GK.module('editor/app', { runtime: false }, function (GK) {
 
         init() {
             this.prefs = store.get(K_PREFS, { left: 270, right: 340, bottom: 230, outliner: 40, shadows: 'high', particles: true, toured: false });
-            const ed = this.ed = new GK.Editor.Editor(document.getElementById('viewport'));
-            GK.editor = ed;
+            let ed;
+            try {
+                if (!GK.Engine.webglSupport().ok) throw new Error('WebGL unavailable');
+                ed = this.ed = new GK.Editor.Editor(document.getElementById('viewport'));
+            } catch (e) {
+                const app = document.getElementById('app');
+                if (app) app.remove();
+                GK.Engine.showUnsupported(document.body, 'editor');
+                this.ed = null;
+                this.unsupported = true;
+                return;
+            }
             this.panels = new GK.Editor.Panels(ed);
             this._layout();
             this._menubar();
@@ -64,7 +142,10 @@ GK.module('editor/app', { runtime: false }, function (GK) {
             ed.on('meta', () => this._title());
             ed.on('world', () => this._title());
             ed.log('GamerKraft Engine ' + GK.version + ' initialised (three.js r' + THREE.REVISION + ', ' + (ed.engine.renderer.capabilities.isWebGL2 ? 'WebGL2' : 'WebGL1') + ')', 'info', 'LogInit');
-            this._boot();
+            this.ready = Storage.init().catch(e => ed.log('Project storage: ' + e.message, 'warn', 'LogSave')).then(() => this._boot()).then(() => {
+                GK.editor = ed;
+                ed.log('Projects are stored in this browser (' + (Storage.db ? 'IndexedDB' : 'localStorage') + ')', 'info', 'LogSave');
+            });
             let last = performance.now();
             const loop = now => {
                 requestAnimationFrame(loop);
@@ -75,21 +156,24 @@ GK.module('editor/app', { runtime: false }, function (GK) {
             };
             requestAnimationFrame(loop);
             setInterval(() => { if (ed.dirty && !ed.pie) this.save(true); }, 60000);
-            window.addEventListener('beforeunload', () => { if (ed.dirty && !ed.pie) this.save(true); });
+            document.addEventListener('visibilitychange', () => { if (document.hidden && ed.dirty && !ed.pie) this.save(true); });
+            window.addEventListener('beforeunload', () => { if (ed.dirty && !ed.pie) { Storage.rescue(ed.world.toJSON()); this.save(true); } });
         },
 
-        _boot() {
+        async _boot() {
             const legacy = store.get('gamerkraft_autosave_v2', null);
             if (legacy && !Storage.list().length) {
                 try {
                     const w = GK.World.fromJSON(legacy);
                     w.meta.name = 'Migrated Level (v2)';
-                    Storage.save(w.toJSON());
+                    await Storage.save(w.toJSON());
                     this.ed.log('Migrated your previous GamerKraft v2 level into a project', 'success', 'LogInit');
                 } catch (e) { }
             }
+            const shared = GK.Share.parse(location.hash);
+            if (shared && shared.mode === 'edit' && await this.openShared(shared.data)) return;
             const last = store.get(K_LAST, null);
-            const data = last && Storage.load(last);
+            const data = last && await Storage.load(last);
             if (data) {
                 try { this.ed.loadProject(data); this._title(); return; }
                 catch (e) { this.ed.log('Could not open last project: ' + e.message, 'error'); }
@@ -97,7 +181,40 @@ GK.module('editor/app', { runtime: false }, function (GK) {
             this.ed.loadProject(GK.Templates.create('platformer'));
             this.ed.world.meta.id = U.uid();
             this._title();
-            setTimeout(() => this.projectBrowser(true), 200);
+            this.projectBrowser(true);
+        },
+
+        async openShared(data) {
+            const clear = () => history.replaceState(null, '', location.pathname + location.search);
+            let project;
+            try { project = await GK.Share.decode(data); }
+            catch (e) {
+                clear();
+                UI.toast('That remix link is damaged or incomplete: ' + e.message, 'error');
+                this.ed.log('Could not open remix link: ' + e.message, 'error', 'LogSave');
+                return false;
+            }
+            const w = GK.World.fromJSON(project);
+            w.meta.id = U.uid();
+            w.meta.name = (w.meta.name || 'Shared Game') + ' (Remix)';
+            let done = false;
+            const finish = () => {
+                if (done) return;
+                done = true;
+                clear();
+                this.ed.loadProject(w.toJSON());
+                this.save(true);
+                this._title();
+                UI.toast('Opened "' + w.meta.name + '". It is your own copy now.', 'success');
+            };
+            if (!w.script.trim()) { finish(); return true; }
+            this.ed.loadProject(GK.Templates.create('blank'));
+            UI.modal('Shared Level Script', h('div', { style: { maxWidth: '460px', lineHeight: '1.6' } },
+                'This game includes a Level Script: code that runs when you press Play. Keep it only if you trust whoever sent the link. You can read it in the Level Script tab either way.'), [
+                { label: 'Remove Script', action: () => { w.script = ''; finish(); } },
+                { label: 'Keep Script', primary: true, action: () => finish() }
+            ], { icon: 'shield-alert', sticky: true, onClose: () => { if (!done) { w.script = ''; finish(); } } });
+            return true;
         },
 
         _title() {
@@ -109,25 +226,32 @@ GK.module('editor/app', { runtime: false }, function (GK) {
 
         save(silent) {
             const ed = this.ed;
-            if (ed.pie) { UI.toast('Stop Play before saving', 'warn'); return; }
+            if (ed.pie) { UI.toast('Stop Play before saving', 'warn'); return Promise.resolve(false); }
             const data = ed.world.toJSON();
             let thumb = '';
             try { thumb = ed.engine.snapshot(240, 135, ed.activeCamera); } catch (e) { }
-            if (!Storage.save(data, thumb)) { UI.toast('Save failed: browser storage is full. Use File ▸ Export Project File.', 'error'); ed.log('Save failed (storage quota)', 'error', 'LogSave'); return false; }
             ed.clearDirty();
-            ed.log((silent ? 'Autosaved ' : 'Saved ') + '"' + data.meta.name + '"', 'success', 'LogSave');
-            if (!silent) UI.toast('Saved "' + data.meta.name + '"', 'success');
-            return true;
+            return Storage.save(data, thumb).then(ok => {
+                if (!ok) {
+                    ed.markDirty();
+                    UI.toast('Save failed: this browser has no storage space left. Free some space, or use File ▸ Export Project File.', 'error');
+                    ed.log('Save failed (storage full)', 'error', 'LogSave');
+                    return false;
+                }
+                ed.log((silent ? 'Autosaved ' : 'Saved ') + '"' + data.meta.name + '"', 'success', 'LogSave');
+                if (!silent) UI.toast('Saved "' + data.meta.name + '"', 'success');
+                return true;
+            });
         },
         newProject(tid, name) {
             const data = GK.Templates.create(tid, name);
             this.ed.loadProject(data);
-            this.save(true);
             this._title();
             UI.toast('Created "' + data.meta.name + '" from the ' + GK.Templates.get(tid).name + ' template', 'success');
+            return this.save(true);
         },
-        openProject(id) {
-            const data = Storage.load(id);
+        async openProject(id) {
+            const data = await Storage.load(id);
             if (!data) { UI.toast('Project not found', 'error'); return; }
             this.ed.loadProject(data);
             store.set(K_LAST, id);
@@ -164,6 +288,40 @@ GK.module('editor/app', { runtime: false }, function (GK) {
             inp.click();
         },
 
+        async shareDialog() {
+            const ed = this.ed, w = ed.world;
+            if (ed.pie) { UI.toast('Stop Play before sharing', 'warn'); return; }
+            let links;
+            try { links = await GK.Share.links(w.toJSON()); }
+            catch (e) { UI.toast('Could not create a link: ' + e.message, 'error'); return; }
+            const S = GK.Share, tooBig = links.length > S.MAX_LINK;
+            const field = (value, label, note) => {
+                const inp = h('input.inp.share-link', { value, readOnly: true });
+                inp.addEventListener('focus', () => inp.select());
+                const copy = h('button.btn', { on: { click: async () => {
+                    try { await navigator.clipboard.writeText(value); UI.toast(label + ' copied', 'success'); }
+                    catch (e) { inp.select(); document.execCommand('copy'); UI.toast(label + ' copied', 'success'); }
+                } } }, UI.icon('copy', 13), 'Copy');
+                return h('div', { style: { marginBottom: '14px' } }, h('div', { style: { fontWeight: 600, marginBottom: '4px' } }, label),
+                    h('div', { style: { display: 'flex', gap: '6px' } }, inp, copy), h('div.muted', { style: { marginTop: '4px', lineHeight: 1.5 } }, note));
+            };
+            const problems = this.mapCheck(true);
+            const kb = (links.length / 1024).toFixed(1);
+            const body = h('div', { style: { width: '560px', maxWidth: '100%' } },
+                tooBig ? h('div', { style: { color: '#f87171', marginBottom: '12px' } }, 'This level is too big to fit in a link (' + kb + ' KB). Use Package Project to share it as a file.') : [
+                    field(links.play, 'Play link', 'Anyone who opens it plays the game straight away in their browser, on phones too. Nothing to install and no account.'),
+                    field(links.edit, 'Remix link', 'Opens a copy in the GamerKraft editor so others can build on your game. Your project stays yours.')
+                ],
+                h('div.help-text', { style: { padding: '0' } }, 'The whole game is stored inside the link itself, so nothing is uploaded and the link keeps working as long as this site is up. ' +
+                    'Link size: ' + kb + ' KB.' + (links.length > S.LONG_LINK ? ' Some chat apps shorten long messages; if a link gets cut off, send it by email or paste it into a notes or docs app.' : '')),
+                problems.length ? h('div', { style: { marginTop: '10px', color: '#e8c35b' } }, UI.icon('triangle-alert', 13), ' Map Check found ' + problems.length + ' issue(s): ' + problems.map(p => p.msg).join('; ')) : null);
+            const buttons = [{ label: 'Close' }];
+            if (!tooBig && navigator.share) buttons.unshift({ label: 'Share…', action: () => { navigator.share({ title: w.meta.name, text: 'Play ' + w.meta.name + ', made with GamerKraft', url: links.play }).catch(() => {}); return false; } });
+            if (!tooBig) buttons.push({ label: 'Open Play Link', primary: true, action: () => { window.open(links.play, '_blank', 'noopener'); return false; } });
+            UI.modal('Share Game', body, buttons, { icon: 'share-2', focus: false });
+            ed.log('Share link created (' + kb + ' KB)', 'info', 'LogShare');
+            return links;
+        },
         packageDialog() {
             const ed = this.ed, w = ed.world;
             const o = { quality: 'medium', showFps: false };
@@ -174,7 +332,13 @@ GK.module('editor/app', { runtime: false }, function (GK) {
                 h('div.form-row', h('label', 'Author'), (() => { const i = h('input.inp', { value: w.meta.author || '' }); i.addEventListener('change', () => ed.history.meta('author', i.value)); return i; })()),
                 h('div.form-row', h('label', 'Default Quality'), (() => { const s = h('select.inp', ['low', 'medium', 'high'].map(q => h('option', { value: q, selected: q === o.quality }, q[0].toUpperCase() + q.slice(1)))); s.addEventListener('change', () => { o.quality = s.value; }); return s; })()),
                 h('div.form-row', h('label', 'Show FPS Counter'), (() => { const c = h('input', { type: 'checkbox' }); c.addEventListener('change', () => { o.showFps = c.checked; }); return c; })()),
+                h('div.form-row', h('label', 'Ray Tracing'), (() => {
+                    const s = h('select.inp', [['off', 'Off by default (players can turn it on)'], ['on', 'On by default (players can turn it off)']].map(([v, l]) => h('option', { value: v, selected: (v === 'on') === !!w.settings.render.rt.game }, l)));
+                    s.addEventListener('change', () => ed.history.setting('render.rt.game', s.value === 'on'));
+                    return s;
+                })()),
                 h('div.help-text', { style: { padding: '4px 0 0' } }, 'The packaged game is a single HTML file containing the engine runtime, three.js and your level. It runs offline in any modern browser, on desktop (mouse/keyboard/gamepad) and mobile (touch controls).'),
+                h('div.help-text', { style: { padding: '4px 0 0' } }, 'No file needed? File ▸ Share Game Link gives a link anyone can play online.'),
                 problems.length ? h('div', { style: { marginTop: '10px', color: '#e8c35b' } }, UI.icon('triangle-alert', 13), ' Map Check found ' + problems.length + ' issue(s): ' + problems.map(p => p.msg).join('; ')) : null);
             UI.modal('Package Project', body, [
                 { label: 'Cancel' },
@@ -323,6 +487,10 @@ GK.module('editor/app', { runtime: false }, function (GK) {
                 });
             });
         },
+        _rtQualityItems() {
+            const ed = this.ed, Q = GK.RayTracer.QUALITY;
+            return Object.keys(Q).map(k => ({ label: Q[k].label, checked: ed.world.settings.render.rt.quality === k, action: () => { ed.history.setting('render.rt.quality', k); if (ed.viewMode !== 'raytraced') ed.setViewMode('raytraced'); } }));
+        },
         togglePanel(which) {
             const ws = document.getElementById('workspace'), app = document.getElementById('app');
             const hidden = this._hidden || (this._hidden = {});
@@ -351,6 +519,7 @@ GK.module('editor/app', { runtime: false }, function (GK) {
                     { label: 'Import Project File…', icon: 'upload', action: () => this.importFile() },
                     { label: 'Export Project File', icon: 'download', action: () => this.exportFile() },
                     '-',
+                    { label: 'Share Game Link…', icon: 'share-2', action: () => this.shareDialog() },
                     { label: 'Package Project…', icon: 'package', action: () => this.packageDialog() },
                     { label: 'Play Standalone', icon: 'app-window', action: () => this.playStandalone() }
                 ],
@@ -401,15 +570,16 @@ GK.module('editor/app', { runtime: false }, function (GK) {
                     { label: 'Render Image…', icon: 'aperture', kb: 'Alt+R', action: () => GK.RenderStudio.open(ed, 'image') },
                     { label: 'Render Animation…', icon: 'clapperboard', action: () => GK.RenderStudio.open(ed, 'anim') },
                     '-',
+                    { label: 'Ray Traced Viewport (real-time)', checked: ed.viewMode === 'raytraced', action: () => ed.setViewMode(ed.viewMode === 'raytraced' ? 'lit' : 'raytraced') },
                     { label: 'Path Traced Viewport', checked: ed.viewMode === 'pathtraced', action: () => ed.setViewMode(ed.viewMode === 'pathtraced' ? 'lit' : 'pathtraced') },
-                    { label: 'Autofocus on Viewport Centre', icon: 'focus', action: () => GK.RenderStudio.autofocus(ed) }
-                ],
+                    { head: 'Ray Tracing Quality' }
+                ].concat(this._rtQualityItems(), ['-', { label: 'Autofocus on Viewport Centre', icon: 'focus', action: () => GK.RenderStudio.autofocus(ed) }]),
                 Help: () => [
                     { label: 'Quick Start Tour', icon: 'graduation-cap', action: () => this.tour() },
                     { label: 'Keyboard Shortcuts', icon: 'keyboard', kb: 'F1', action: () => this.shortcuts() },
                     { label: 'Scripting Reference', icon: 'file-code', action: () => this.panels.bottomTabs.select('script') },
                     '-',
-                    { label: 'About GamerKraft Engine', icon: 'info', action: () => UI.modal('About', h('div', { style: { width: '380px', lineHeight: 1.7 } }, h('b', 'GamerKraft Engine ' + GK.version), h('div.muted', 'Browser-native 3D game engine & level editor.'), h('div', 'Renderer: three.js r' + THREE.REVISION + ' • chunked voxel meshing with baked AO • procedural materials • PBR lighting • dynamic sky • GPU-instanced foliage'), h('div', 'Path tracer: WebGL2 • voxel DDA + BVH • global illumination • refraction • depth of field • denoiser • image, video and PNG-sequence output'), h('div', 'Runtime: fixed-step physics • scripting • HUD • gamepad & touch • single-file web packaging')), [{ label: 'Close', primary: true }], { icon: 'info' }) }
+                    { label: 'About GamerKraft Engine', icon: 'info', action: () => UI.modal('About', h('div', { style: { width: '380px', lineHeight: 1.7 } }, h('b', 'GamerKraft Engine ' + GK.version), h('div.muted', 'Browser-native 3D game engine & level editor.'), h('div', 'Renderer: three.js r' + THREE.REVISION + ' • chunked voxel meshing with baked AO • procedural materials • PBR lighting • dynamic sky • GPU-instanced foliage'), h('div', 'Ray tracer (real-time, in games too): traced shadows • reflections • refraction • ambient occlusion • one-bounce GI • temporal antialiasing'), h('div', 'Path tracer: WebGL2 • voxel DDA + BVH • global illumination • refraction • depth of field • denoiser • image, video and PNG-sequence output'), h('div.muted', 'Free and open source under the MIT License.'), h('div', 'Runtime: fixed-step physics • scripting • HUD • gamepad & touch • single-file web packaging')), [{ label: 'Close', primary: true }], { icon: 'info' }) }
                 ]
             };
             Object.keys(menus).forEach(name => {
@@ -455,13 +625,14 @@ GK.module('editor/app', { runtime: false }, function (GK) {
             const playMenu = h('button.tb', { title: 'Play options', style: { padding: '0 4px' } }, UI.icon('ellipsis-vertical', 14));
             playMenu.addEventListener('mousedown', e => { e.stopPropagation(); UI.menuAt(playMenu, [{ label: 'Play in Viewport', icon: 'play', kb: 'Alt+P', action: () => ed.startPIE() }, { label: 'Play Standalone (new window)', icon: 'app-window', action: () => this.playStandalone() }]); });
             const pkg = h('button.tb', { title: 'Platforms / packaging' }, UI.icon('package', 16), h('span', 'Platforms'), UI.icon('chevron-down', 10));
-            pkg.addEventListener('mousedown', e => { e.stopPropagation(); UI.menuAt(pkg, [{ head: 'Web (HTML5)' }, { label: 'Package Project…', icon: 'package', action: () => this.packageDialog() }, { label: 'Play Standalone', icon: 'app-window', action: () => this.playStandalone() }, '-', { label: 'Map Check', icon: 'list-checks', action: () => this.mapCheck() }]); });
+            pkg.addEventListener('mousedown', e => { e.stopPropagation(); UI.menuAt(pkg, [{ head: 'Web (HTML5)' }, { label: 'Share Game Link…', icon: 'share-2', action: () => this.shareDialog() }, { label: 'Package Project…', icon: 'package', action: () => this.packageDialog() }, { label: 'Play Standalone', icon: 'app-window', action: () => this.playStandalone() }, '-', { label: 'Map Check', icon: 'list-checks', action: () => this.mapCheck() }]); });
             const render = h('button.tb', { title: 'Path traced rendering' }, UI.icon('aperture', 16), h('span', 'Render'), UI.icon('chevron-down', 10));
             render.addEventListener('mousedown', e => {
                 e.stopPropagation();
                 UI.menuAt(render, [{ head: 'Path Tracer' }, { label: 'Render Image…', icon: 'aperture', kb: 'Alt+R', action: () => GK.RenderStudio.open(ed, 'image') },
-                    { label: 'Render Animation…', icon: 'clapperboard', action: () => GK.RenderStudio.open(ed, 'anim') }, '-',
-                    { label: 'Path Traced Viewport', checked: ed.viewMode === 'pathtraced', action: () => ed.setViewMode(ed.viewMode === 'pathtraced' ? 'lit' : 'pathtraced') }]);
+                    { label: 'Render Animation…', icon: 'clapperboard', action: () => GK.RenderStudio.open(ed, 'anim') }, '-', { head: 'Real-time Ray Tracer' },
+                    { label: 'Ray Traced Viewport', checked: ed.viewMode === 'raytraced', action: () => ed.setViewMode(ed.viewMode === 'raytraced' ? 'lit' : 'raytraced') }]
+                    .concat(this._rtQualityItems(), ['-', { label: 'Path Traced Viewport', checked: ed.viewMode === 'pathtraced', action: () => ed.setViewMode(ed.viewMode === 'pathtraced' ? 'lit' : 'pathtraced') }]));
             });
             const settings = h('button.tb', { title: 'Engine scalability settings' }, UI.icon('settings', 16), h('span', 'Settings'), UI.icon('chevron-down', 10));
             settings.addEventListener('mousedown', e => {
@@ -473,7 +644,7 @@ GK.module('editor/app', { runtime: false }, function (GK) {
                         { label: 'Viewport Stats', checked: ed.show.stats, action: () => { ed.show.stats = !ed.show.stats; } }]));
             });
             tb.append(btn('save', '', 'Save (Ctrl+S)', () => this.save()), btn('folder-open', 'Content', 'Open Content Browser', () => { if (this._hidden && this._hidden.bottom) this.togglePanel('bottom'); this.panels.bottomTabs.select('content'); }), h('div.sep'),
-                modeBtn, add, h('div.grow'), play, pause, stop, playMenu, h('div.grow'), btn('list-checks', '', 'Map Check', () => this.mapCheck()), render, pkg, settings);
+                modeBtn, add, h('div.grow'), play, pause, stop, playMenu, h('div.grow'), btn('list-checks', '', 'Map Check', () => this.mapCheck()), btn('share-2', 'Share', 'Share this game as a link anyone can play', () => this.shareDialog(), 'share'), render, pkg, settings);
             const sync = () => { const on = !!ed.pie; play.disabled = on; pause.disabled = !on; stop.disabled = !on; };
             ed.on('pie', sync);
             sync();
@@ -481,14 +652,14 @@ GK.module('editor/app', { runtime: false }, function (GK) {
 
         _viewportBars() {
             const ed = this.ed;
-            const VIEW_MODES = { lit: 'Lit', unlit: 'Unlit', wireframe: 'Wireframe', pathtraced: 'Path Traced' };
+            const VIEW_MODES = { lit: 'Lit', unlit: 'Unlit', wireframe: 'Wireframe', raytraced: 'Ray Traced', pathtraced: 'Path Traced' };
             const L = document.getElementById('vp-left'), R = document.getElementById('vp-right');
             const vb = (content, title, action, on) => { const b = h('button.vp-btn' + (on ? '.on' : ''), { title }, content); b.addEventListener('mousedown', e => { e.stopPropagation(); action(b); }); return b; };
             const render = () => {
                 L.innerHTML = ''; R.innerHTML = '';
                 L.append(h('div.vp-group',
                     vb([UI.icon(ed.view === 'top' ? 'square' : 'box', 13), ed.view === 'top' ? 'Top' : 'Perspective', UI.icon('chevron-down', 10)], 'View', b => UI.menuAt(b, [{ label: 'Perspective', checked: ed.view === 'persp', action: () => ed.setView('persp') }, { label: 'Top (Orthographic)', checked: ed.view === 'top', action: () => ed.setView('top') }])),
-                    vb([UI.icon(ed.viewMode === 'pathtraced' ? 'aperture' : 'sun', 13), VIEW_MODES[ed.viewMode], UI.icon('chevron-down', 10)], 'View mode', b => UI.menuAt(b, Object.keys(VIEW_MODES).map(m => ({ label: VIEW_MODES[m], checked: ed.viewMode === m, action: () => ed.setViewMode(m) })))),
+                    vb([UI.icon(ed.viewMode === 'pathtraced' ? 'aperture' : ed.viewMode === 'raytraced' ? 'sparkles' : 'sun', 13), VIEW_MODES[ed.viewMode], UI.icon('chevron-down', 10)], 'View mode', b => UI.menuAt(b, Object.keys(VIEW_MODES).map(m => ({ label: VIEW_MODES[m], checked: ed.viewMode === m, action: () => ed.setViewMode(m) })))),
                     vb([UI.icon('eye', 13), 'Show', UI.icon('chevron-down', 10)], 'Show flags', b => UI.menuAt(b, [
                         { label: 'Grid', checked: ed.show.grid, action: () => { ed.show.grid = !ed.show.grid; ed.grid.visible = ed.show.grid; } },
                         { label: 'Editor Icons (Game View: G)', checked: ed.engine.worldView.editorVisuals, action: () => ed.engine.worldView.setEditorVisuals(!ed.engine.worldView.editorVisuals) },
@@ -517,6 +688,13 @@ GK.module('editor/app', { runtime: false }, function (GK) {
             [['X', 1, 0, 0, '#e5484d'], ['Y', 0, 1, 0, '#5ec04a'], ['Z', 0, 0, 1, '#3b82f6']].map(a => { const v = new THREE.Vector3(a[1], a[2], a[3]).applyQuaternion(q); return [a[0], v, a[4]]; })
                 .sort((a, b) => a[1].z - b[1].z).forEach(([n, v, c]) => { s += `<line x1="0" y1="0" x2="${v.x * 20}" y2="${-v.y * 20}" stroke="${c}" stroke-width="2.5"/><text x="${v.x * 25}" y="${-v.y * 25 + 3}" fill="${c}" font-size="9" font-weight="700" text-anchor="middle">${n}</text>`; });
             svg.innerHTML = s;
+            const rt = ed.engine.rt;
+            if (!this._rtBadge) { this._rtBadge = h('div#rt-badge.hidden'); document.getElementById('viewport').appendChild(this._rtBadge); }
+            this._rtBadge.classList.toggle('hidden', !rt || !!ed.pie);
+            if (rt && !ed.pie) {
+                const txt = rt.error ? 'Ray tracing stopped' : ['Ray Traced', GK.RayTracer.QUALITY[rt.options.quality].label, ed.engine.info.fps + ' fps', Math.round(rt.options.scale * 100) + '%'].join('  ·  ');
+                if (this._rtBadge.textContent !== txt) this._rtBadge.textContent = txt;
+            }
             const st = document.getElementById('vp-stats');
             st.classList.toggle('hidden', !ed.show.stats || !!ed.pie);
             if (ed.show.stats && !ed.pie) {
@@ -529,7 +707,8 @@ GK.module('editor/app', { runtime: false }, function (GK) {
                 landscape: 'Hold LMB: sculpt • Shift: invert • RMB+WASD: fly',
                 foliage: 'Hold LMB: paint foliage • Shift: erase • RMB+WASD: fly'
             };
-            const t = hints[ed.mode];
+            const touch = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+            const t = touch ? (ed.placing ? `Tap to place ${A.get(ed.placing).label}` : { select: 'Tap: select', build: 'Tap or drag: place blocks', landscape: 'Drag: sculpt', foliage: 'Drag: paint foliage' }[ed.mode] + ' • Two fingers: orbit • Pinch: zoom') : hints[ed.mode];
             if (this._hint.textContent !== t) this._hint.textContent = t;
             if (this._sbStats) {
                 const txt = `${ed.world.actors.length} actors • ${ed.world.size}×${ed.world.size} map`;
@@ -561,7 +740,9 @@ GK.module('editor/app', { runtime: false }, function (GK) {
             const log = (m, l) => ed.log(m, l || 'info', 'Cmd');
             log('> ' + line);
             const cmds = {
-                help: () => log('Commands: stat fps | r.shadows off|low|medium|high | r.pathtrace 0|1 | render [samples] | play | stop | save | mapcheck | tp x y z | fill x1 y1 z1 x2 y2 z2 block | clear | template <id> | time <0-24> | sky <preset> | viewmode lit|unlit|wireframe|pathtraced | blocks | undo | redo'),
+                help: () => log('Commands: stat fps | r.shadows off|low|medium|high | r.raytrace 0|1 | r.rt.quality low|medium|high|ultra | r.pathtrace 0|1 | render [samples] | play | stop | save | mapcheck | tp x y z | fill x1 y1 z1 x2 y2 z2 block | clear | template <id> | time <0-24> | sky <preset> | viewmode lit|unlit|wireframe|raytraced|pathtraced | blocks | undo | redo'),
+                'r.raytrace': () => ed.setViewMode(args[0] === '0' || (args[0] == null && ed.viewMode === 'raytraced') ? 'lit' : 'raytraced'),
+                'r.rt.quality': () => { if (!GK.RayTracer.QUALITY[args[0]]) return log('Ray tracing quality: ' + Object.keys(GK.RayTracer.QUALITY).join(', '), 'warn'); ed.history.setting('render.rt.quality', args[0]); },
                 'r.pathtrace': () => ed.setViewMode(args[0] === '0' || (args[0] == null && ed.viewMode === 'pathtraced') ? 'lit' : 'pathtraced'),
                 render: () => {
                     if (args[0] && !(+args[0] > 0)) return log('usage: render [samples]', 'error');
@@ -585,7 +766,7 @@ GK.module('editor/app', { runtime: false }, function (GK) {
                 template: () => { const t = GK.Templates.get(args[0]); if (!t) return log('Templates: ' + GK.Templates.list.map(x => x.id).join(', '), 'warn'); this.guard(() => this.newProject(t.id)); },
                 time: () => ed.history.setting('env.timeOfDay', U.clamp(+args[0] || 12, 0, 24)),
                 sky: () => { if (!GK.Sky.PRESETS[args[0]]) return log('Presets: ' + Object.keys(GK.Sky.PRESETS).join(', '), 'warn'); ed.history.setting('env.preset', args[0]); },
-                viewmode: () => { const m = args[0] || 'lit'; if (!['lit', 'unlit', 'wireframe', 'pathtraced'].includes(m)) return log('View modes: lit, unlit, wireframe, pathtraced', 'warn'); ed.setViewMode(m); },
+                viewmode: () => { const m = args[0] || 'lit'; if (!['lit', 'unlit', 'wireframe', 'raytraced', 'pathtraced'].includes(m)) return log('View modes: lit, unlit, wireframe, raytraced, pathtraced', 'warn'); ed.setViewMode(m); },
                 blocks: () => log(B.list.map(b => b.key).join(', '))
             };
             if (cmds[c]) { try { cmds[c](); } catch (e) { log(e.message, 'error'); } }
@@ -688,7 +869,8 @@ GK.module('editor/app', { runtime: false }, function (GK) {
                 ['#details-panel', 'Details & World Settings', 'Edit the selected actor’s transform and properties. World Settings holds the win condition, player tuning, sky, time of day and music.'],
                 ['#dock-bottom', 'Content Browser, Output Log & Level Script', 'Browse blocks and actors, read engine messages, and write a Level Script that reacts to gameplay events.'],
                 ['#toolbar .tb.play', 'Play In Editor', 'Test your game instantly inside the viewport (Alt+P). Press Esc to pause and Esc again to stop — the level is restored exactly.'],
-                ['#toolbar .tb:nth-last-child(3)', 'Render', 'Path trace photoreal stills, turntable videos and time-lapses of your level, free in the browser: global illumination, soft shadows, reflections, glass and water. Pick Path Traced in the viewport view-mode menu (next to Perspective) to preview it live.'],
+                ['#toolbar .tb.share', 'Share', 'Share gives you a link to your game. Anyone who opens it plays instantly in their browser, even on a phone, with nothing to install. A Remix link lets others build on a copy.'],
+                ['#toolbar .tb:nth-last-child(3)', 'Render', 'Path trace photoreal stills, turntable videos and time-lapses of your level, free in the browser: global illumination, soft shadows, reflections, glass and water. The viewport view-mode menu (next to Perspective) has a real-time Ray Traced mode, which games can use too, and a Path Traced preview.'],
                 ['#toolbar .tb:nth-last-child(2)', 'Package', 'Platforms ▸ Package Project exports a single offline HTML file you can share or host anywhere, with touch and gamepad support.']
             ];
             let i = 0;
@@ -717,6 +899,13 @@ GK.module('editor/app', { runtime: false }, function (GK) {
         }
     };
 
-    window.addEventListener('DOMContentLoaded', () => { if (!App.ed) App.init(); });
-    if (document.readyState !== 'loading') setTimeout(() => { if (!App.ed) App.init(); }, 0);
+    const start = () => {
+        if (App.ed || App.unsupported || App.playing) return;
+        const shared = GK.Share.parse(location.hash);
+        if (shared && shared.mode === 'play') { App.playing = GK.Share.play(shared.data); return; }
+        App.init();
+    };
+    window.addEventListener('DOMContentLoaded', start);
+    if (document.readyState !== 'loading') setTimeout(start, 0);
+    window.addEventListener('hashchange', () => { if (GK.Share.parse(location.hash)) location.reload(); });
 });

@@ -5,17 +5,27 @@ import vm from 'node:vm';
 
 const FILES = ['src/boot.js', 'vendor/three.gk.js', 'src/core/util.js', 'src/core/blocks.js', 'src/core/world.js',
   'src/render/voxel-material.js', 'src/render/mesher.js', 'src/render/sky.js', 'src/core/actors.js', 'src/render/engine.js',
-  'src/render/rt-scene.js', 'src/render/render-output.js'];
+  'src/render/rt-scene.js', 'src/render/rt-glsl.js', 'src/render/raytracer.js', 'src/render/pathtracer.js', 'src/render/render-output.js'];
 function loadGK() {
   const ctx = { console, btoa, atob, TextEncoder, performance };
   ctx.window = ctx;
   ctx.self = ctx;
   vm.createContext(ctx);
   for (const f of FILES) vm.runInContext(readFileSync(new URL('../' + f, import.meta.url), 'utf8'), ctx, { filename: f });
+  ctx.GK.__ctx = ctx;
   return ctx.GK;
 }
 const GK = loadGK();
 const RT = GK.RTScene, RO = GK.RenderOutput;
+const loadThree = () => GK.__three || (GK.__three = vm.runInContext('THREE', GK.__ctx));
+
+function geometryOf(tris, placements) {
+  const store = new RT.GeometryStore();
+  const e = store.add('g', tris);
+  const inst = RT.packInstances((placements || [{ matrix: RT.IDENTITY, material: -1 }]).map(p => RT.instance(e, p.matrix, p.material, RT.FLAG_SHADOW)));
+  const pool = store.pack();
+  return { nodes: pool.nodes, tris: pool.tris, instances: inst.instances, tlas: inst.tlas, instCount: inst.count };
+}
 
 function viewFor(world) {
   const scene = { add() {}, remove() {} };
@@ -95,7 +105,7 @@ test('the BVH covers every triangle and its traversal matches brute force', () =
     }
   }
   assert.equal(leaves, n);
-  const geo = { nodes: RT.packNodes(bvh), nodeCount: bvh.nodeCount, tris: RT.packTriangles(tris, bvh) };
+  const geo = geometryOf(tris);
   const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
   const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
   const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
@@ -260,4 +270,93 @@ test('projects gain render settings with defaults and keep them through save and
   const old = w.toJSON();
   delete old.settings.render;
   assert.equal(GK.World.fromJSON(old).settings.render.bounces, 4, 'older projects get the defaults');
+});
+
+test('instances place shared geometry in the world; two-level traversal matches brute force', () => {
+  const T = loadThree();
+  const box = RT.geometryTriangles(new T.BoxGeometry(1, 1, 1), true);
+  assert.equal(box.count, 12);
+  const rng = GK.Util.RNG(11);
+  const placements = [];
+  for (let i = 0; i < 40; i++) {
+    const m = new T.Matrix4().compose(
+      new T.Vector3(rng.range(-15, 15), rng.range(0, 8), rng.range(-15, 15)),
+      new T.Quaternion().setFromEuler(new T.Euler(rng.range(0, 3), rng.range(0, 3), rng.range(0, 3))),
+      new T.Vector3(rng.range(0.3, 2.5), rng.range(0.3, 2.5), rng.range(0.3, 2.5)));
+    placements.push({ matrix: m, material: i });
+  }
+  const geo = geometryOf(box, placements);
+  assert.equal(geo.instCount, 40);
+  const world = [];
+  placements.forEach(p => {
+    for (let t = 0; t < 12; t++) {
+      const v = [0, 1, 2].map(k => new T.Vector3(box.pos[t * 9 + k * 3], box.pos[t * 9 + k * 3 + 1], box.pos[t * 9 + k * 3 + 2]).applyMatrix4(p.matrix));
+      world.push({ v, material: p.material });
+    }
+  });
+  const ray = new T.Ray(), hitPt = new T.Vector3();
+  for (let r = 0; r < 200; r++) {
+    const o = [rng.range(-25, 25), rng.range(-5, 15), rng.range(-25, 25)];
+    const tgt = [rng.range(-15, 15), rng.range(0, 8), rng.range(-15, 15)];
+    const len = Math.hypot(tgt[0] - o[0], tgt[1] - o[1], tgt[2] - o[2]);
+    const d = [(tgt[0] - o[0]) / len, (tgt[1] - o[1]) / len, (tgt[2] - o[2]) / len];
+    ray.set(new T.Vector3(...o), new T.Vector3(...d));
+    let best = null;
+    for (const w of world) {
+      const hp = ray.intersectTriangle(w.v[0], w.v[1], w.v[2], false, hitPt);
+      if (hp) { const t = hp.distanceTo(ray.origin); if (t > 1e-4 && (!best || t < best.t)) best = { t, material: w.material }; }
+    }
+    const got = RT.raycastGeometry(geo, o, d);
+    assert.equal(!!got, !!best, 'ray ' + r);
+    if (best) { assert.ok(Math.abs(got.t - best.t) < 1e-3, `ray ${r}: ${got.t} vs ${best.t}`); assert.equal(got.material, best.material); }
+  }
+});
+
+test('the geometry store tells empty from unknown geometry and skips singular transforms', () => {
+  const store = new RT.GeometryStore();
+  assert.equal(store.get('nothing'), undefined);
+  assert.equal(store.add('empty', { count: 0, pos: new Float32Array(0), nor: new Float32Array(0), mat: new Int32Array(0) }), null);
+  assert.equal(store.get('empty'), null);
+  const tri = { count: 1, pos: new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]), nor: new Float32Array(9), mat: new Int32Array([-1]) };
+  const a = store.add('a', tri), b = store.add('b', tri);
+  assert.equal(b.triBase, a.triBase + 1);
+  assert.equal(b.nodeBase, a.nodeBase + a.nodeCount);
+  const T = loadThree();
+  assert.equal(RT.instance(a, new T.Matrix4().makeScale(1, 0, 1), -1, 1), null);
+  const moved = RT.instance(a, new T.Matrix4().makeTranslation(5, 0, 0), -1, 1);
+  assert.deepEqual(Array.from(moved.bounds).map(v => Math.round(v * 1000) / 1000), [5, 0, 0, 6, 1, 0]);
+});
+
+test('both tracers assemble GLSL without reserved words as names', () => {
+  const RESERVED = ['smooth', 'flat', 'all', 'any', 'input', 'output', 'filter', 'sample', 'active', 'common', 'partition', 'union', 'enum',
+    'typedef', 'template', 'this', 'packed', 'goto', 'inline', 'volatile', 'public', 'static', 'extern', 'external', 'interface', 'long', 'short',
+    'double', 'half', 'fixed', 'unsigned', 'sizeof', 'cast', 'namespace', 'using', 'centroid', 'patch', 'sampler', 'resource', 'buffer', 'shared'];
+  const decl = new RegExp('\\b(?:bool|int|uint|float|[iu]?vec[234]|mat[234]|Surf|Hit)\\s+(' + RESERVED.join('|') + ')\\b');
+  const sources = Object.assign({}, GK.RayTracer.shaderSources(), Object.fromEntries(Object.entries(GK.PathTracer.shaderSources()).map(([k, v]) => ['pt ' + k, v])));
+  for (const [name, src] of Object.entries(sources)) {
+    assert.ok(src.startsWith('#version 300 es\n'), name + ' starts with the GLSL ES 3.00 directive');
+    assert.doesNotMatch(src, decl, name);
+    assert.doesNotMatch(src, /\$\{/, name + ' has no unexpanded template placeholders');
+    const open = (src.match(/\{/g) || []).length, close = (src.match(/\}/g) || []).length;
+    assert.equal(open, close, name + ' braces balance');
+  }
+  assert.match(sources.trace, /bool traceMeshes\(/);
+  assert.match(sources.trace, /gl_FragDepth|oPos/);
+});
+
+test('packaged games carry the ray tracer but not the editor-only path tracer', () => {
+  const bundle = GK.bundle({ runtimeOnly: true });
+  assert.match(bundle, /GK\.module\("render\/raytracer"/);
+  assert.match(bundle, /GK\.module\("render\/rt-glsl"/);
+  assert.doesNotMatch(bundle, /GK\.module\("render\/pathtracer"/);
+  const ctx = { console, btoa, atob, TextEncoder, performance };
+  ctx.window = ctx;
+  ctx.self = ctx;
+  vm.createContext(ctx);
+  vm.runInContext(bundle, ctx);
+  assert.deepEqual(Object.keys(ctx.GK.RayTracer.QUALITY), ['low', 'medium', 'high', 'ultra']);
+  assert.equal(ctx.GK.RayTracer.support(null).ok, false, 'no renderer, no ray tracing');
+  const w = new ctx.GK.World({ size: 16 });
+  assert.equal(w.settings.render.rt.game, false, 'games start without ray tracing unless the project opts in');
+  assert.equal(w.settings.render.rt.quality, 'high');
 });
