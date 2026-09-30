@@ -1,16 +1,10 @@
 GK.module('editor/share', { runtime: false }, function (GK) {
     'use strict';
 
-    // Games travel inside links. The project JSON is deflated and base64url-encoded into the URL
-    // fragment (#play=… or #edit=…). The fragment is never sent to the web server, so sharing
-    // needs no account, upload or backend: whoever opens the link gets the whole game.
-
     const U = GK.Util;
     const Share = GK.Share = {};
 
-    // Browsers accept multi-megabyte URLs; beyond this a link is impractical to paste anywhere.
     Share.MAX_LINK = 1500000;
-    // Chat apps and some social sites cut or reject messages longer than this.
     Share.LONG_LINK = 8000;
 
     const toUrl = bytes => U.bytesToBase64(bytes).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
@@ -20,7 +14,6 @@ GK.module('editor/share', { runtime: false }, function (GK) {
     };
     const through = async (bytes, stream) => new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(stream)).arrayBuffer());
 
-    // 'z' + deflate-raw(JSON), or 'j' + plain JSON where CompressionStream is missing.
     Share.encode = async function (project) {
         const data = JSON.parse(JSON.stringify(project));
         if (data.meta) { delete data.meta.id; delete data.meta.created; delete data.meta.modified; }
@@ -46,7 +39,6 @@ GK.module('editor/share', { runtime: false }, function (GK) {
         return m ? { mode: m[1], data: m[2] } : null;
     };
 
-    // Where links point: this page when it is served over http(s), otherwise the public site.
     Share.base = function () {
         if (/^https?:$/.test(location.protocol)) return location.origin + location.pathname;
         const meta = document.querySelector('meta[name="gk-public-url"]');
@@ -60,8 +52,6 @@ GK.module('editor/share', { runtime: false }, function (GK) {
         return { play: base + '#play=' + data, edit: base + '#edit=' + data, length: base.length + 6 + data.length };
     };
 
-    // Plays a shared game. It runs as a packaged game inside a sandboxed iframe with an opaque
-    // origin, so its Level Script cannot reach this site's saved projects or navigate the page.
     Share.play = async function (data) {
         const app = document.getElementById('app');
         if (app) app.remove();

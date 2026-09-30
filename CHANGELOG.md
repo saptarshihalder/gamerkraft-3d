@@ -12,20 +12,15 @@ All notable changes to GamerKraft 3D are documented here. The format follows [Ke
 
 ### Added
 
-- Share Game Link (toolbar **Share**, File and Platforms menus). The whole game is compressed into the link's `#` fragment, which browsers never send to the server, so sharing needs no account, upload or backend. A _Play_ link runs the game in a sandboxed iframe with an opaque origin, so its Level Script cannot reach the site's saved projects. A _Remix_ link opens a copy in the editor and asks whether to keep someone else's Level Script before it can run. Damaged or cut-off links show an explanation instead of a broken game.
-- Projects are stored in IndexedDB instead of `localStorage` (about 5 MB), with automatic migration and a `localStorage` fallback. Saves also happen when the tab is hidden, and a failed save now says so instead of claiming success.
-- Devices or browsers that can't create a WebGL context get a plain-language screen (turn on hardware acceleration, update the browser, try another device) in the editor, in packaged games and on play links, instead of a blank page.
-- Touch editing for tablets: tap to use the current tool, drag with two fingers to orbit, pinch to zoom (pan and zoom in the top view).
-- Unit tests for link encoding and a browser smoke test for play links, remixing and the no-3D screen.
-- A real-time ray tracer that works in the editor, in Play In Editor and in packaged games. It traces voxel and actor visibility, sun and point-light shadows, reflections, refraction through glass, water and slime, ambient occlusion and (Ultra) one-bounce GI. A temporal pass antialiases and denoises it, and three.js draws helpers, particles and transparent effects on top using the traced depth. It has Low/Medium/High/Ultra presets and a resolution scale, a Ray Traced view mode, `r.raytrace` and `r.rt.quality` console commands, and a World Settings section. A project option starts packaged games with ray tracing on. Players can switch it and its quality in the pause menu, and their choice is remembered.
-- A two-level BVH (shared per-geometry BLASes placed by instances under a per-frame TLAS) and tracing GLSL shared by the ray tracer and the path tracer.
-- An MIT `LICENSE` file (the project already declared MIT). It is also published with the site, packaged games carry a license notice, and the README lists third-party licenses.
-- A built-in path tracer written directly against WebGL2. It renders voxels (two-level DDA over a 3D texture) and actor meshes (SAH BVH) with global illumination, soft shadows, GGX reflections, refraction through glass, water and slime, water scattering, torch and glowing-block lighting, depth of field, the level's sky and fog, and an edge-aware denoiser.
-- A Path Traced viewport mode that refines progressively and follows edits live.
-- A Render window (`Alt+R`, **Render** menu and toolbar) for still images up to 8K, saved as PNG or copied to the clipboard.
-- Animation rendering: turntables and day-cycle time-lapses, output as WebM video (WebCodecs with exact frame timing, MediaRecorder fallback) and/or a ZIP of PNG frames.
-- Render settings are saved with each project (`settings.render`). New console commands: `render [samples]` and `r.pathtrace 0|1`.
-- Unit tests for scene packing, the BVH, the ZIP and WebM writers and animation cameras, and a browser smoke test that renders a still, an animation and the viewport.
+- Share Game Link: Play and Remix links that carry the project in the URL fragment. Shared games run in a sandboxed iframe; Remix asks before keeping a Level Script.
+- Projects are stored in IndexedDB, migrated from `localStorage`.
+- A "can't show 3D" screen when WebGL is unavailable, in the editor, packaged games and play links.
+- Touch camera controls for tablets (tap, two-finger orbit, pinch zoom).
+- Real-time ray tracer for the editor, Play In Editor and packaged games, with Low/Medium/High/Ultra presets, `r.raytrace` / `r.rt.quality`, and a pause-menu toggle for players.
+- Path tracer with a Path Traced viewport, Render Image (`Alt+R`, up to 8K) and Render Animation (turntable or time-lapse, WebM or PNG ZIP). New console commands: `render [samples]`, `r.pathtrace 0|1`.
+- Render settings are saved with each project (`settings.render`).
+- MIT `LICENSE` file.
+- Tests for share links, scene packing, the BVH, ZIP/WebM writers and animation cameras; smoke tests for sharing, both tracers and the no-3D screen.
 - Editor modes (Selection, Build, Landscape, Foliage), a move/rotate/scale gizmo with snapping, and block tools (brush, box, erase, paint, flood fill, eyedropper).
 - Terrain sculpting and a procedural terrain generator with five biomes.
 - Transactional undo/redo, Play In Editor with exact level rollback, Play From Here, Map Check, a top orthographic view, and lit/unlit/wireframe view modes.

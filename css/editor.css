@@ -249,7 +249,6 @@ kbd { background: var(--bg4); border: 1px solid #444; border-bottom-width: 2px; 
 #tour-card p { margin: 0 0 12px; line-height: 1.55; }
 #tour-card .row { display: flex; justify-content: space-between; align-items: center; }
 
-/* Path tracer: viewport overlay and Render window */
 #rt-badge.hidden { display: none; }
 #viewport canvas.pt-canvas { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 1; pointer-events: none; }
 #pt-badge, #rt-badge { position: absolute; left: 50%; top: 42px; transform: translateX(-50%); z-index: 6; background: rgba(0,0,0,.6); color: #e9d8a6; border: 1px solid rgba(233,216,166,.25); padding: 3px 12px; border-radius: 12px; font: 11px/1.5 ui-monospace, Consolas, monospace; pointer-events: none; white-space: nowrap; }
@@ -279,7 +278,6 @@ kbd { background: var(--bg4); border: 1px solid #444; border-bottom-width: 2px; 
     .rs-buttons { width: 100%; justify-content: flex-end; flex-wrap: wrap; }
 }
 
-/* Shared game links (#play=): a slim bar above the sandboxed game */
 .tb.share { background: var(--accent); border-color: var(--accent2); color: #fff; }
 .tb.share:hover { background: var(--accent2); }
 .share-link { font: 11px ui-monospace, Consolas, monospace; }

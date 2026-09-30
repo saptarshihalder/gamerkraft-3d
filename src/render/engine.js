@@ -327,8 +327,6 @@ GK.module('render/engine', function (GK) {
             if (this.rt) this.rt.setWorld(world);
         }
 
-        // Real-time ray tracing (GK.RayTracer). opts: false to turn it off, or { quality, resolution }.
-        // Returns { ok, reason }; unsupported hardware keeps the raster renderer.
         setRayTracing(opts) {
             if (!opts) {
                 if (this.rt) { this.rt.dispose(); this.rt = null; }
@@ -446,7 +444,6 @@ GK.module('render/engine', function (GK) {
         }
     }
 
-    // Whether this browser can create a WebGL context at all.
     Engine.webglSupport = function () {
         try {
             const c = document.createElement('canvas');
@@ -458,7 +455,6 @@ GK.module('render/engine', function (GK) {
         } catch (e) { return { ok: false }; }
     };
 
-    // Explains what to do instead of leaving a blank page when WebGL is unavailable.
     Engine.showUnsupported = function (container, what) {
         const box = document.createElement('div');
         box.className = 'gk-no3d';

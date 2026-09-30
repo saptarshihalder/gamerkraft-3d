@@ -17,10 +17,8 @@ function loadGK() {
 }
 const GK = loadGK();
 const RT = GK.RTScene, RO = GK.RenderOutput;
-// THREE lives inside the vm context; math results are checked with its own classes.
 const loadThree = () => GK.__three || (GK.__three = vm.runInContext('THREE', GK.__ctx));
 
-// Packs triangles as one BLAS placed by each of `placements` (default: identity).
 function geometryOf(tris, placements) {
   const store = new RT.GeometryStore();
   const e = store.add('g', tris);
