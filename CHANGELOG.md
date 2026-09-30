@@ -12,12 +12,15 @@ All notable changes to GamerKraft 3D are documented here. The format follows [Ke
 
 ### Added
 
-- A built-in path tracer written directly against WebGL2. It renders voxels (two-level DDA over a 3D texture) and actor meshes (SAH BVH) with global illumination, soft shadows, GGX reflections, refraction through glass, water and slime, water scattering, torch and glowing-block lighting, depth of field, the level's sky and fog, and an edge-aware denoiser.
-- A Path Traced viewport mode that refines progressively and follows edits live.
-- A Render window (`Alt+R`, **Render** menu and toolbar) for still images up to 8K, saved as PNG or copied to the clipboard.
-- Animation rendering: turntables and day-cycle time-lapses, output as WebM video (WebCodecs with exact frame timing, MediaRecorder fallback) and/or a ZIP of PNG frames.
-- Render settings are saved with each project (`settings.render`). New console commands: `render [samples]` and `r.pathtrace 0|1`.
-- Unit tests for scene packing, the BVH, the ZIP and WebM writers and animation cameras, and a browser smoke test that renders a still, an animation and the viewport.
+- Share Game Link: Play and Remix links that carry the project in the URL fragment. Shared games run in a sandboxed iframe; Remix asks before keeping a Level Script.
+- Projects are stored in IndexedDB, migrated from `localStorage`.
+- A "can't show 3D" screen when WebGL is unavailable, in the editor, packaged games and play links.
+- Touch camera controls for tablets (tap, two-finger orbit, pinch zoom).
+- Real-time ray tracer for the editor, Play In Editor and packaged games, with Low/Medium/High/Ultra presets, `r.raytrace` / `r.rt.quality`, and a pause-menu toggle for players.
+- Path tracer with a Path Traced viewport, Render Image (`Alt+R`, up to 8K) and Render Animation (turntable or time-lapse, WebM or PNG ZIP). New console commands: `render [samples]`, `r.pathtrace 0|1`.
+- Render settings are saved with each project (`settings.render`).
+- MIT `LICENSE` file.
+- Tests for share links, scene packing, the BVH, ZIP/WebM writers and animation cameras; smoke tests for sharing, both tracers and the no-3D screen.
 - Editor modes (Selection, Build, Landscape, Foliage), a move/rotate/scale gizmo with snapping, and block tools (brush, box, erase, paint, flood fill, eyedropper).
 - Terrain sculpting and a procedural terrain generator with five biomes.
 - Transactional undo/redo, Play In Editor with exact level rollback, Play From Here, Map Check, a top orthographic view, and lit/unlit/wireframe view modes.

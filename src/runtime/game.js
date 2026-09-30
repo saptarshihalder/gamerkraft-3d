@@ -221,17 +221,26 @@ GK.module('runtime/game', function (GK) {
             }
         }
         _settingsHTML() {
-            const inp = this.input;
+            const inp = this.input, eng = this.engine;
+            let rt = '';
+            if (GK.RayTracer && GK.RayTracer.support(eng.renderer).ok) {
+                const Q = GK.RayTracer.QUALITY, cur = eng.rt ? eng.rt.options.quality : this.S.render.rt.quality;
+                rt = `<label>Ray Tracing</label><input type="checkbox" ${eng.rt ? 'checked' : ''} data-k="rt">
+<label>Ray Tracing Quality</label><select data-k="rtq">${Object.keys(Q).map(q => `<option value="${q}"${q === cur ? ' selected' : ''}>${Q[q].label}</option>`).join('')}</select>`;
+            }
             return `<div class="gk-set"><label>Volume</label><input type="range" min="0" max="1" step="0.05" value="${Audio.volume}" data-k="vol">
 <label>Mouse Sensitivity</label><input type="range" min="0.2" max="3" step="0.1" value="${inp.sensitivity}" data-k="sens">
-<label>Invert Y</label><input type="checkbox" ${inp.invertY ? 'checked' : ''} data-k="inv"></div>`;
+<label>Invert Y</label><input type="checkbox" ${inp.invertY ? 'checked' : ''} data-k="inv">${rt}</div>`;
         }
         _bindSettings(sc) {
-            sc.querySelectorAll('[data-k]').forEach(el => el.addEventListener('input', () => {
+            const rtOptions = () => ({ quality: sc.querySelector('[data-k=rtq]').value, resolution: this.S.render.rt.resolution });
+            sc.querySelectorAll('[data-k]').forEach(el => el.addEventListener(el.tagName === 'SELECT' ? 'change' : 'input', () => {
                 const k = el.dataset.k;
                 if (k === 'vol') Audio.setVolume(+el.value);
                 if (k === 'sens') this.input.sensitivity = +el.value;
                 if (k === 'inv') this.input.invertY = el.checked;
+                if (k === 'rt') this.engine.setRayTracing(el.checked ? rtOptions() : false);
+                if (k === 'rtq' && this.engine.rt) this.engine.setRayTracing(rtOptions());
                 this.emit('settingsChanged');
             }));
         }
