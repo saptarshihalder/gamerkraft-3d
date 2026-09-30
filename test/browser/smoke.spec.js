@@ -272,3 +272,86 @@ test("the path tracer renders stills, animations and the viewport", async ({
   await expect(page.locator("canvas.pt-canvas")).toHaveCount(0);
   expect(errors).toEqual([]);
 });
+
+test("the real-time ray tracer runs in the editor, in Play In Editor and in packaged games", async ({
+  page,
+  context,
+}, testInfo) => {
+  test.setTimeout(420_000);
+  const errors = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.setViewportSize({ width: 900, height: 560 });
+  await openEditor(page);
+  await page.evaluate(() => {
+    window.GK.App.newProject("platformer", "Ray Smoke");
+    window.GK.editor.world.setSetting("render.rt.resolution", "50");
+    window.GK.App.console("r.raytrace 1");
+  });
+  const frames = () =>
+    page.evaluate(() => {
+      const rt = window.GK.editor.engine.rt;
+      return rt ? (rt.error ? -1 : rt.frame) : 0;
+    });
+  await expect.poll(frames, { timeout: 60_000 }).toBeGreaterThan(3);
+  await expect(page.locator("#rt-badge")).toContainText("Ray Traced");
+
+  const image = await page.evaluate(async () => {
+    const url = window.GK.editor.engine.snapshot(64, 36);
+    const img = new Image();
+    img.src = url;
+    await img.decode();
+    const c = document.createElement("canvas");
+    c.width = 64;
+    c.height = 36;
+    const g = c.getContext("2d");
+    g.drawImage(img, 0, 0);
+    const px = g.getImageData(0, 0, 64, 36).data;
+    let sum = 0;
+    let sq = 0;
+    for (let i = 0; i < px.length; i += 4) {
+      const l = px[i] + px[i + 1] + px[i + 2];
+      sum += l;
+      sq += l * l;
+    }
+    const n = px.length / 4;
+    return { mean: sum / n, variance: sq / n - (sum / n) ** 2 };
+  });
+  expect(image.mean).toBeGreaterThan(30);
+  expect(image.variance).toBeGreaterThan(50);
+
+  const before = await page.evaluate(
+    () => window.GK.editor.engine.rt.stats.instances,
+  );
+  await page.evaluate(() => window.GK.editor.startPIE());
+  await expect
+    .poll(() => page.evaluate(() => window.GK.editor.engine.rt.stats.instances))
+    .toBeGreaterThan(before);
+  await page.evaluate(() => window.GK.editor.pie.game.pause(true));
+  await expect(page.locator(".gk-screen [data-k=rt]")).toBeChecked();
+  await page.evaluate(() => window.GK.editor.stopPIE());
+  expect(await page.evaluate(() => window.GK.editor.viewMode)).toBe(
+    "raytraced",
+  );
+
+  await page.evaluate(() =>
+    window.GK.editor.world.setSetting("render.rt.game", true),
+  );
+  const file = testInfo.outputPath("ray-traced-game.html");
+  await packageGame(page, file);
+  const game = await context.newPage();
+  const gameErrors = [];
+  game.on("pageerror", (e) => gameErrors.push(String(e)));
+  await game.goto(pathToFileURL(file).href);
+  await game.click(".gk-screen .gk-btn.primary");
+  const gameFrames = () =>
+    game.evaluate(() => {
+      const rt = window.GK.runtime.engine.rt;
+      return rt ? (rt.error ? -1 : rt.frame) : 0;
+    });
+  await expect.poll(gameFrames, { timeout: 60_000 }).toBeGreaterThan(3);
+  await game.evaluate(() => window.GK.runtime.game.pause(true));
+  await game.click(".gk-screen [data-k=rt]");
+  expect(await game.evaluate(() => window.GK.runtime.engine.rt)).toBeNull();
+  expect(gameErrors).toEqual([]);
+  expect(errors).toEqual([]);
+});

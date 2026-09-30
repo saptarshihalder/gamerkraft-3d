@@ -1,11 +1,14 @@
 # GamerKraft Engine 3
 
 A browser-native 3D game engine and level editor with an Unreal Engine–style workflow.
-Build levels from voxels and actors, script gameplay, play-test in the viewport,
-render photoreal stills and videos with the built-in **path tracer**, and package a
-**single offline HTML file** that runs on desktop and mobile.
+Build levels from voxels and actors, script gameplay, play-test in the viewport, light them
+with the real-time **ray tracer** (in the editor and in your published games), render
+photoreal stills and videos with the **path tracer**, and package a **single offline HTML
+file** that runs on desktop and mobile.
 
-No build step, no server: open `index.html`.
+No build step, no server: open `index.html`. GamerKraft is **free and open source** under the
+[MIT License](LICENSE). There is no account, subscription, watermark or royalty, and every
+renderer runs on your own GPU.
 
 ## Editor
 
@@ -22,7 +25,7 @@ Status bar has a console (`help`).
 - **Undo/redo** — transactional history for blocks, actors, settings, script and map size (100 steps)
 - **Project Browser** — 8 templates with live-rendered thumbnails; multiple projects saved in the browser with autosave
 - **Play In Editor** — play-test in the viewport; the level is restored exactly on stop. *Play From Here* via right-click
-- **Map Check**, copy/paste, duplicate, snap-to-floor, top orthographic view, lit/unlit/wireframe, guided tour
+- **Map Check**, copy/paste, duplicate, snap-to-floor, top orthographic view, lit/unlit/wireframe/ray traced/path traced view modes, guided tour
 
 ### Templates
 Blank · Third Person Platformer · First Person Arena · Parkour Tower (Obby) · Coin Rush · Dungeon Crawler (procedural maze, keys & doors) · Survival Island · Sandbox Builder
@@ -36,11 +39,46 @@ Blank · Third Person Platformer · First Person Arena · Parkour Tower (Obby) �
 - **Audio** — procedural sound effects and 4 generative music tracks (WebAudio, no assets)
 - **HUD** — health, lives, score, coins, timer, objective, keys, jetpack fuel, minimap, pause menu with settings, victory/defeat screens with best times
 
-## Rendering
+## Ray tracing (real time)
 
-GamerKraft includes its own path tracer, written directly against WebGL2 (it does not use
-three.js). Rendering runs entirely on your GPU in the browser: it is free, needs no account or
-render farm, and nothing is uploaded.
+The ray tracer (`src/render/raytracer.js`) runs every frame. It works in the editor viewport,
+in Play In Editor and in packaged games, so players get it too.
+
+- **In the editor**: choose *Ray Traced* in the viewport's view-mode menu, the **Render**
+  toolbar menu, or `r.raytrace 1`. Editor helpers such as the gizmo, grid and selection boxes
+  stay visible on top.
+- **Quality presets** (World Settings ▸ Ray Tracing, or `r.rt.quality`):
+  - *Low*: hard shadows, half resolution.
+  - *Medium*: soft shadows, reflections, 75% resolution.
+  - *High*: shadows inside reflections, more lights.
+  - *Ultra*: adds one-bounce global illumination.
+  - *Resolution* can override the preset's render scale.
+- **In games**: turn on *On in Games by Default* (also in **Package Project**) and players start
+  with ray tracing. The pause menu lets any player switch it on or off and pick a quality, and
+  their choice is remembered. Devices without WebGL2 simply keep the standard renderer.
+
+What it traces: voxel and actor visibility, sun and point-light shadows (soft shadows from
+jittered rays), mirror and glossy reflections (metals, water, glass, ice, polished blocks),
+refraction with Fresnel through glass, water and slime, ray-traced ambient occlusion, glowing
+blocks as lights, and one-bounce diffuse GI on Ultra.
+
+How it works:
+
+- It shares three.js's WebGL2 context. Primary rays, shadows and reflections are traced in one
+  full-screen pass.
+- A temporal pass reprojects last frame's result through each pixel's hit position, clamps it to
+  the current neighbourhood and blends it in. This antialiases the image and smooths soft shadows.
+- The result is written with depth, and three.js then draws particles, lines, transparent effects
+  and editor helpers on top.
+- Moving actors are handled with a two-level BVH. Each distinct geometry gets one bottom-level
+  BVH. Every frame the renderer places instances of those BVHs from the live scene graph and
+  rebuilds a small top-level BVH over them. Static foliage is baked into its own BVH.
+
+## Path tracing (offline rendering)
+
+GamerKraft also includes a path tracer, written directly against WebGL2 (it does not use
+three.js), for final-quality images and videos. Rendering runs entirely on your GPU in the
+browser: it is free, needs no account or render farm, and nothing is uploaded.
 
 - **Path Traced viewport**: choose *Path Traced* in the viewport's view-mode menu (next to
   *Perspective*), the **Render** toolbar menu, or `r.pathtrace 1`. The view refines while you
@@ -59,17 +97,18 @@ depth of field with autofocus, the level's sky, clouds, stars and fog. Frames ar
 accumulated and cleaned by an edge-aware denoiser guided by normals, depth and albedo. ACES,
 Reinhard or linear tone mapping.
 
-How it works (`src/render/rt-scene.js`, `src/render/pathtracer.js`):
+How it works (`src/render/rt-scene.js`, `src/render/rt-glsl.js`, `src/render/pathtracer.js`):
 
 - Voxels are uploaded as a 3D texture and traversed with a two-level DDA that skips empty
-  4³ bricks. Actor meshes, including instanced foliage, are flattened into a binned-SAH BVH.
-- Block surfaces use the same procedural GLSL as the raster renderer, so both match.
+  4³ bricks. Actor meshes, including instanced foliage, use the same binned-SAH two-level BVH
+  as the ray tracer. Both tracers share this traversal and shading GLSL.
+- Block surfaces use the same procedural GLSL as the raster renderer, so all three match.
 - Every pixel keeps a running average of independent samples in float render targets. Work is
   split into tiles and throttled with GPU fences so the editor stays responsive.
 
 Render settings (samples, bounces, camera, lighting, color, animation) are saved with the project.
-The path tracer needs WebGL2 with `EXT_color_buffer_float`, which current desktop and mobile
-browsers support. Packaged games do not include it.
+Both tracers need WebGL2 with `EXT_color_buffer_float`, which current desktop and mobile
+browsers support. Packaged games include the ray tracer but not the path tracer.
 
 ## Level scripting
 
@@ -100,7 +139,8 @@ css/editor.css        UE5-style dark theme
 src/boot.js           module registry + bundler
 src/core/             util, blocks, world (chunks, raycast, serialization), actors
 src/render/           voxel shader, mesher, sky, engine (renderer, world view, particles),
-                      path tracer: rt-scene (scene packing, BVH), pathtracer (WebGL2),
+                      rt-scene (scene packing, two-level BVH), rt-glsl (shared tracing GLSL),
+                      raytracer (real-time, also in games), pathtracer (offline),
                       render-output (resolutions, animation paths, ZIP and WebM writers)
 src/runtime/          input/audio/physics, HUD, game session + scripting, standalone player
 src/editor/           UI kit, editor core (history, gizmo, tools, PIE), panels, templates,
@@ -147,3 +187,17 @@ Projects are JSON (`.gkproj`): `{ format, version: 3, meta, world: { size, heigh
 `settings.render` holds the render settings; older projects get the defaults.
 Chunks are run-length encoded, base64 16³ voxel arrays. Levels from GamerKraft v1/v2 are
 imported and migrated automatically (File ▸ Import, or the v2 browser autosave on first launch).
+
+## License
+
+GamerKraft Engine, including the ray tracer and the path tracer, is released under the
+[MIT License](LICENSE). Anyone may use, modify and share it for free, including for commercial
+games.
+
+Games you make are yours. A packaged game contains the engine runtime, so it carries a one-line
+MIT notice in its HTML. Keep that notice (and this license, if you redistribute the engine
+itself).
+
+Third-party code, both permissive and free:
+- [three.js](https://threejs.org) r128, MIT, bundled in the editor and in packaged games.
+- [Lucide](https://lucide.dev) icons, ISC, editor only.
